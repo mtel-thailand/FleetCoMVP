@@ -1,0 +1,69 @@
+// Tax invoices — brief §6 / §6.3. Final step of the document chain, issued
+// only after FleetCo finance verifies payment. Immutable once issued.
+//
+// Note: sellerTaxId/sellerAddress are placeholders — the brief states "FleetCo"
+// is a placeholder name pending final branding/entity registration (cover page).
+// Fill these in once the real operating entity is registered.
+
+export type TaxInvoice = {
+  id: string;
+  invoiceId: string;
+  bookingId: string;
+  clientId: string;
+  sellerName: string;
+  sellerTaxId: string;
+  sellerAddress: string;
+  buyerName: string;
+  buyerTaxId: string;
+  buyerAddress: string;
+  buyerBranch: string;
+  subtotal: number;
+  discount: number;
+  vatAmount: number;
+  totalAmount: number;
+  amountInWordsThai: string;
+  issuedAt: string;
+  created: string;
+};
+
+export const mockTaxInvoices: TaxInvoice[] = [
+  {
+    id: "TI-2026-0001", invoiceId: "INV-2026-0003", bookingId: "BK-2026-0010", clientId: "CLI-001",
+    sellerName: "FleetCo Operations Co., Ltd. (entity name pending)",
+    sellerTaxId: "0000000000000",
+    sellerAddress: "Registered address pending — FleetCo entity not yet finalized.",
+    buyerName: "Thailand Post Co., Ltd.",
+    buyerTaxId: "0107536000174",
+    buyerAddress: "111 Praram 9 Rd, Huai Khwang, Bangkok 10310, Thailand",
+    buyerBranch: "Head Office",
+    subtotal: 98000, discount: 3000, vatAmount: 6650, totalAmount: 101650,
+    amountInWordsThai: "หนึ่งแสนหนึ่งพันหกร้อยห้าสิบบาทถ้วน",
+    issuedAt: "2026-07-11 09:30", created: "2026-07-11 09:30",
+  },
+  {
+    id: "TI-2026-0002", invoiceId: "INV-2026-0004", bookingId: "BK-2026-0004", clientId: "CLI-001",
+    sellerName: "FleetCo Operations Co., Ltd. (entity name pending)",
+    sellerTaxId: "0000000000000",
+    sellerAddress: "Registered address pending — FleetCo entity not yet finalized.",
+    buyerName: "Thailand Post Co., Ltd.",
+    buyerTaxId: "0107536000174",
+    buyerAddress: "111 Praram 9 Rd, Huai Khwang, Bangkok 10310, Thailand",
+    buyerBranch: "Head Office",
+    subtotal: 49500, discount: 0, vatAmount: 3465, totalAmount: 52965,
+    amountInWordsThai: "ห้าหมื่นสองพันเก้าร้อยหกสิบห้าบาทถ้วน",
+    issuedAt: "2026-07-06 10:00", created: "2026-07-06 10:00",
+  },
+  {
+    id: "TI-2026-0003", invoiceId: "INV-2026-0006", bookingId: "BK-2026-0016", clientId: "CLI-001",
+    sellerName: "FleetCo Operations Co., Ltd. (entity name pending)",
+    sellerTaxId: "0000000000000",
+    sellerAddress: "Registered address pending — FleetCo entity not yet finalized.",
+    buyerName: "Thailand Post Co., Ltd.",
+    buyerTaxId: "0107536000174",
+    buyerAddress: "111 Praram 9 Rd, Huai Khwang, Bangkok 10310, Thailand",
+    buyerBranch: "Head Office",
+    subtotal: 9000, discount: 0, vatAmount: 630, totalAmount: 9630,
+    amountInWordsThai: "เก้าพันหกร้อยสามสิบบาทถ้วน",
+    issuedAt: "2026-08-11 09:00", created: "2026-08-11 09:00",
+  },
+];

@@ -1,0 +1,32 @@
+/* Print setup for the three A4 document surfaces (DocumentEditor's live
+   preview, QuotationDetail, InvoiceDetail) — see A4Document.tsx, which is
+   the only thing that actually depends on this file.
+
+   `margin: 0` on @page is deliberate, not an oversight: A4Document renders
+   its own internal page padding (PAGE_PADDING_MM) sized against the full
+   210mm/297mm sheet, on the assumption that's the whole printable area. The
+   browser's own default print margin (~12.7mm/side in most browsers) would
+   otherwise stack on top of that and silently shrink the real usable area
+   below what the pagination math in A4Document assumed, which is exactly
+   the kind of mismatch that made "Preview PDF" not match the screen before.
+   This does mean any *other* window.print() caller in the app (Tax Invoice
+   modal, Revenue & Reporting export) now also prints edge-to-edge instead
+   of with a browser margin — neither relies on a specific page size the way
+   the three A4 documents do, so this is a minor cosmetic difference for
+   them, not a regression. */
+@media print {
+  @page {
+    size: A4;
+    margin: 0;
+  }
+
+  /* Tailwind's `zoom-*` utilities don't exist, so the responsive on-screen
+     scale (see useElementWidth.ts + A4Document.tsx, which set this via an
+     inline `zoom` style) is reset here instead. `!important` is required to
+     win against that inline style — one of the few cases a stylesheet rule
+     is allowed to beat an inline one. Print always renders each page at its
+     true 210mm×297mm size regardless of how small it was shown on screen. */
+  .a4-page-sheet {
+    zoom: 1 !important;
+  }
+}

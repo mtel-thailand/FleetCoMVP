@@ -1,0 +1,6 @@
+/* Self-hosted (not a runtime Google Fonts CDN fetch — this is a client-only
+   demo that should keep working offline/on a flaky connection) via
+   @fontsource, which bundles the actual woff2 files as local assets. Single
+   weight only: this is used for exactly one thing, the typed-signature
+   rasterization in SignaturePad, not general UI typography. */
+@import "@fontsource/dancing-script/600.css";
