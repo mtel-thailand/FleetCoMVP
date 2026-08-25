@@ -3,11 +3,11 @@
 // immediately to anything else reading them.
 import { useEffect, useState } from "react";
 import { mockInvoices, type Invoice } from "@/app/data/invoices";
-import { loadPersisted, savePersisted, subscribePersisted } from "@/app/lib/persistence";
+import { loadPersisted, mergeSeedRecords, savePersisted, scopeToThailandPost, subscribePersisted } from "@/app/lib/persistence";
 
 type Listener = () => void;
 
-let invoices: Invoice[] = loadPersisted("invoices", [...mockInvoices]);
+let invoices: Invoice[] = scopeToThailandPost(mergeSeedRecords(loadPersisted("invoices", [...mockInvoices]), mockInvoices));
 const listeners = new Set<Listener>();
 
 function notify() {
@@ -17,7 +17,7 @@ function notify() {
 
 // Cross-tab live sync — see persistence.ts.
 subscribePersisted<Invoice[]>("invoices", (value) => {
-  invoices = value;
+  invoices = scopeToThailandPost(value);
   notify();
 });
 

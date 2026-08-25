@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Check, Truck, AlertTriangle, FileCheck2, Ban, Hash, Calendar, MapPin, Pencil } from "lucide-react";
+import { Check, Truck, AlertTriangle, FileCheck2, Ban, Hash, Calendar, MapPin, Pencil, FlaskConical } from "lucide-react";
 import {
   type Booking, type VehicleDriverAssignment, bookingInvoices, bookingQuotations, fleetCoBookingStatusLabel, bookingTaxInvoices, invoiceEligible, REQUEST_STATUSES,
 } from "@/app/data/bookings";
@@ -54,7 +54,7 @@ import { useOpenInvoice, useOpenTaxInvoice } from "@/app/lib/documentNav";
 // handleCancelBooking already set. Quotation/invoice creation lives in
 // OpsDocumentEditorPage.tsx (a real route, not local state here) — see that
 // file's own header comment for why. Deciding on an existing invoice
-// (Verify & Issue Tax Invoice, Reject Payment) has moved to
+// (Verify Payment & Issue Tax Invoice, Reject Payment) has moved to
 // InvoiceDetail.tsx, for the same reason Accept/Decline live on
 // QuotationDetail.tsx and Mark-as-Paid lives on InvoiceDetail.tsx already —
 // this page's billing cluster is now just a "View Invoice" hand-off, same
@@ -131,6 +131,19 @@ function HeaderSecondaryAction({
       className={`flex items-center gap-1.5 border border-slate-200 text-slate-600 rounded-lg text-xs font-medium hover:bg-slate-50 cursor-pointer shrink-0 ${compact ? "h-7 px-2.5" : "h-8 px-3"}`}
     >
       <Icon size={13} /> {children}
+    </button>
+  );
+}
+
+function HeaderDemoAction({
+  onClick, children,
+}: { onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      onClick={onClick}
+      className="flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-dashed border-amber-400 bg-amber-50 px-3 text-xs font-medium text-amber-800 hover:bg-amber-100 cursor-pointer"
+    >
+      <FlaskConical size={13} /> {children}
     </button>
   );
 }
@@ -399,25 +412,32 @@ export function OpsBookingDetailPanel({
   const availableDriverCount = drivers.filter(
     (driver) => getDriverConflicts(driver, booking, allBookings, booking.vehicleClassRequested).length === 0,
   ).length;
-  const hasAssignmentCapacity =
-    availableVehicleCount >= booking.quantity && availableDriverCount >= booking.quantity;
+  const hasVehicleCapacity = availableVehicleCount >= booking.quantity;
+  const hasDriverCapacity = availableDriverCount >= booking.quantity;
+  const hasAssignmentCapacity = hasVehicleCapacity && hasDriverCapacity;
   const requestedVehicleLabel =
     booking.quantity === 1 ? booking.vehicleClassRequested : `${booking.vehicleClassRequested}s`;
 
-  function resourceAvailabilityBanner(stage: "request" | "assignment") {
-    const availableSummary = `${availableVehicleCount} of ${booking.quantity} ${requestedVehicleLabel} and ${availableDriverCount} compatible driver${availableDriverCount === 1 ? "" : "s"}`;
+  function resourceAvailabilityBanner() {
+    const requiredSummary = `${booking.quantity} ${requestedVehicleLabel} and ${booking.quantity} compatible driver${booking.quantity === 1 ? "" : "s"}`;
+    const availableSummary = `${availableVehicleCount} matching vehicle${availableVehicleCount === 1 ? "" : "s"} and ${availableDriverCount} compatible driver${availableDriverCount === 1 ? "" : "s"}`;
     if (hasAssignmentCapacity) {
       return (
         <InfoBanner tone="emerald">
-          <span className="font-semibold">Resources available — </span>
-          {availableSummary} are available for these dates. {stage === "request" ? "Capacity can be confirmed before issuing the quotation." : "This rental is ready for vehicle and driver assignment."}
+          <span className="font-semibold">Capacity available — </span>
+          {requiredSummary} required; {availableSummary} available.
         </InfoBanner>
       );
     }
+    const shortageTitle = !hasVehicleCapacity && !hasDriverCapacity
+      ? "Vehicle and driver shortage"
+      : !hasVehicleCapacity
+        ? "Vehicle shortage"
+        : "Driver shortage";
     return (
       <InfoBanner tone="amber">
-        <span className="font-semibold">Resource shortage — </span>
-        only {availableSummary} are available for these dates. {stage === "request" ? "Review fleet capacity before issuing the quotation." : "Resolve the shortage or date conflicts before assignment."}
+        <span className="font-semibold">{shortageTitle} — </span>
+        {requiredSummary} required; {availableSummary} available.
       </InfoBanner>
     );
   }
@@ -474,20 +494,20 @@ export function OpsBookingDetailPanel({
     case "Requested":
       rentalPrimary = <HeaderAction icon={FileCheck2} onClick={() => navigate(`/ops/bookings/${booking.id}/quotation/new`)}>Create Quotation</HeaderAction>;
       rentalSecondary = <HeaderSecondaryAction icon={Ban} onClick={() => setShowReject(true)}>Reject Request</HeaderSecondaryAction>;
-      rentalInfo = resourceAvailabilityBanner("request");
+      rentalInfo = resourceAvailabilityBanner();
       break;
     case "Quoted":
       rentalInfo = <InfoBanner tone="sky">Waiting on {client?.name ?? "the client"} to accept or decline the quotation.</InfoBanner>;
       break;
     case "Accepted":
       rentalPrimary = <HeaderAction icon={Truck} onClick={() => setShowAssign(true)}>Assign Vehicle &amp; Driver</HeaderAction>;
-      rentalInfo = resourceAvailabilityBanner("assignment");
+      rentalInfo = resourceAvailabilityBanner();
       break;
     case "Assigned":
-      rentalPrimary = <HeaderAction icon={Check} onClick={() => updateBooking(booking.id, { status: "Active", updated: nowStamp() })}>Start Rental (Demo)</HeaderAction>;
+      rentalPrimary = <HeaderDemoAction onClick={() => updateBooking(booking.id, { status: "Active", updated: nowStamp() })}>Start Rental (Demo Button)</HeaderDemoAction>;
       break;
     case "Active":
-      rentalPrimary = <HeaderAction icon={Check} onClick={() => updateBooking(booking.id, { status: "Completed", updated: nowStamp() })}>Complete Rental (Demo)</HeaderAction>;
+      rentalPrimary = <HeaderDemoAction onClick={() => updateBooking(booking.id, { status: "Completed", updated: nowStamp() })}>Complete Rental (Demo Button)</HeaderDemoAction>;
       break;
     default:
       break;
@@ -521,14 +541,7 @@ export function OpsBookingDetailPanel({
         )}
       </div>
     );
-  } else if (latestInvoice?.status === "Paid" && !latestInvoiceHasTaxInvoice) {
-    billingInfo = (
-      <InfoBanner tone="emerald">
-        Payment verified. View the invoice to issue the tax invoice{!booking.isRecurringBilling ? " and close out this booking" : ""}.
-      </InfoBanner>
-    );
-    billingPrimary = <HeaderAction icon={FileCheck2} onClick={() => openInvoice(latestInvoice.id, booking.id)}>View Invoice</HeaderAction>;
-  } else if (booking.isRecurringBilling && invoiceEligible(booking)) {
+  } else if (booking.isRecurringBilling && invoiceEligible(booking) && (!latestInvoice || (latestInvoice.status === "Paid" && latestInvoiceHasTaxInvoice))) {
     // Reachable only once the current cycle (if any) is fully closed out —
     // every earlier branch above claims any invoice that's still pending
     // payment, verification, or its tax invoice, so by the time we get
@@ -551,7 +564,7 @@ export function OpsBookingDetailPanel({
     // gated on the rental actually having finished. Reachable exactly once
     // per booking: the branches above already claim every case where an
     // invoice exists, so this only fires while there isn't one yet.
-    billingInfo = <InfoBanner tone="indigo">Ready to invoice — doesn't have to wait until the rental is complete.</InfoBanner>;
+    billingInfo = <InfoBanner tone="indigo">Ready to invoice. You can issue the invoice now.</InfoBanner>;
     billingPrimary = <HeaderAction icon={FileCheck2} onClick={() => navigate(`/ops/bookings/${booking.id}/invoice/new`)}>Issue Invoice</HeaderAction>;
   } else if (!booking.isRecurringBilling && latestInvoice?.status === "Paid" && latestInvoiceHasTaxInvoice) {
     // The one-off equivalent of "fully closed out" — quotation, invoice, and
@@ -681,7 +694,7 @@ export function OpsBookingDetailPanel({
                 </div>
               )}
               <div className="mt-4 pt-4 border-t border-slate-100">
-                <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Rental Timeline</h4>
+                <h4 className="text-[10px] font-normal text-slate-400 uppercase tracking-wider mb-3">Rental Timeline</h4>
                 <RentalTimeline entries={timeline} />
               </div>
             </div>

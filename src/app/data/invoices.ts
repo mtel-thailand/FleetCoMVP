@@ -61,7 +61,7 @@ export const mockInvoices: Invoice[] = [
     created: "2026-07-07 09:00", updated: "2026-07-07 09:00",
   },
   {
-    id: "INV-2026-0002", bookingId: "BK-2026-0009", quotationId: "QT-2026-0008", clientId: "CLI-002",
+    id: "INV-2026-0002", bookingId: "BK-2026-0009", quotationId: "QT-2026-0008", clientId: "CLI-001",
     isRecurring: false, amountDue: 18190, issuedAt: "2026-07-28 09:00", dueDate: "2026-08-12",
     status: "Paid", paymentDate: "2026-08-03", paymentReference: "KTB20260803-0091", paymentSlipFiles: ["KTB20260803-0091-slip.jpg"],
     created: "2026-07-28 09:00", updated: "2026-08-05 14:00",
@@ -125,5 +125,16 @@ export const mockInvoices: Invoice[] = [
     status: "Payment Issue", paymentDate: "2026-08-12", paymentReference: "SCB20260812-0042", paymentSlipFiles: ["SCB20260812-0042-slip.jpg"],
     paymentRejectionReason: "Reference number doesn't match any transaction in the bank statement — please double-check and resubmit.",
     created: "2026-08-05 09:00", updated: "2026-08-13 11:00",
+  },
+  // Second finance-verification example for a one-day active rental, so
+  // Action Required demonstrates more than one rental type.
+  {
+    id: "INV-2026-0010", bookingId: "BK-2026-0005", quotationId: "QT-2026-0005", clientId: "CLI-001",
+    isRecurring: false, amountDue: 2996, issuedAt: "2026-08-14 09:00", dueDate: "2026-08-29",
+    status: "Payment Submitted", paymentDate: "2026-08-15", paymentReference: "SCB20260815-0138",
+    paymentSlipFiles: ["SCB20260815-0138-slip.jpg"],
+    lineItems: [{ description: "4-Wheel truck — same-day overflow delivery", vehicleClass: "4-Wheel Truck", quantity: 1, unit: "vehicle (1 day)", unitPrice: 2800, amount: 2800 }],
+    discount: 0, vatRate: 0.07,
+    created: "2026-08-14 09:00", updated: "2026-08-15 16:20",
   },
 ];

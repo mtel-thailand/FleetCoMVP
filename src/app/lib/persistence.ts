@@ -43,6 +43,13 @@ export function mergeSeedRecords<T extends { id: string }>(persisted: T[], seeds
   return missingSeeds.length ? [...missingSeeds, ...persisted] : persisted;
 }
 
+// The current demo is intentionally scoped to Thailand Post. Normalize old
+// persisted records from the former second-client examples so a browser that
+// already ran the demo does not keep showing a stale mixed-client dataset.
+export function scopeToThailandPost<T extends { clientId: string }>(records: T[]): T[] {
+  return records.map((record) => record.clientId === "CLI-001" ? record : { ...record, clientId: "CLI-001" });
+}
+
 /** Calls onChange whenever a *different* tab/window updates this key. */
 export function subscribePersisted<T>(key: string, onChange: (value: T) => void): () => void {
   function handler(e: StorageEvent) {

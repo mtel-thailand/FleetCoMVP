@@ -8,8 +8,8 @@ import { loadPersisted, savePersisted, subscribePersisted } from "@/app/lib/pers
 
 type Listener = () => void;
 
-let clients: ClientAccount[] = loadPersisted("clients", [...mockClients]);
-let clientUsers: ClientUser[] = loadPersisted("clientUsers", [...mockClientUsers]);
+let clients: ClientAccount[] = loadPersisted("clients", [...mockClients]).filter((client) => client.id === "CLI-001");
+let clientUsers: ClientUser[] = loadPersisted("clientUsers", [...mockClientUsers]).filter((user) => user.clientId === "CLI-001");
 const listeners = new Set<Listener>();
 
 function notify() {
@@ -21,11 +21,11 @@ function notify() {
 // Cross-tab live sync — see persistence.ts. Two independent keys, since
 // clients and clientUsers are two independent arrays here.
 subscribePersisted<ClientAccount[]>("clients", (value) => {
-  clients = value;
+  clients = value.filter((client) => client.id === "CLI-001");
   notify();
 });
 subscribePersisted<ClientUser[]>("clientUsers", (value) => {
-  clientUsers = value;
+  clientUsers = value.filter((user) => user.clientId === "CLI-001");
   notify();
 });
 

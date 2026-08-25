@@ -15,6 +15,7 @@ import { OpsQuotations } from "./pages/operations/OpsQuotations";
 import { OpsQuotationDetail } from "./pages/operations/OpsQuotationDetail";
 import { OpsInvoices } from "./pages/operations/OpsInvoices";
 import { OpsInvoiceDetail } from "./pages/operations/OpsInvoiceDetail";
+import { OpsPaymentVerification } from "./pages/operations/OpsPaymentVerification";
 import { OpsTaxInvoices } from "./pages/operations/OpsTaxInvoices";
 import { OpsTaxInvoiceDetail } from "./pages/operations/OpsTaxInvoiceDetail";
 import { OpsDocumentEditorPage } from "./pages/operations/OpsDocumentEditorPage";
@@ -140,6 +141,11 @@ export const router = createBrowserRouter([
         handle: { resolveNavPath: () => "/ops/documents/quotations" } satisfies RouteHandle,
       },
       { path: "ops/documents/invoices", element: <OpsInvoices /> },
+      {
+        path: "ops/documents/invoices/:id/verify",
+        element: <OpsPaymentVerification />,
+        handle: { resolveNavPath: () => "/ops/documents/invoices" } satisfies RouteHandle,
+      },
       {
         path: "ops/documents/invoices/:id",
         element: <OpsInvoiceDetail />,

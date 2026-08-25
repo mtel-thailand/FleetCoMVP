@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { useNavigate, Navigate, Link } from "react-router";
-import { EyeOff, Eye, Truck, Building2, ChevronRight, BookOpen } from "lucide-react";
+import { useNavigate, Navigate } from "react-router";
+import { EyeOff, Eye, Truck, Building2, ChevronRight } from "lucide-react";
 import fleetcoLogo from "@/assets/fleetco-logo.svg";
 import thailandPostLogo from "@/assets/thailand-post-logo.png";
 import {
@@ -164,15 +164,7 @@ export function LoginPage() {
               : "radial-gradient(circle at 20% 20%, rgba(136,19,55,0.22), transparent 40%), radial-gradient(circle at 80% 80%, rgba(136,19,55,0.18), transparent 40%)",
         }}
       >
-        <div className="relative z-10 flex items-center gap-2">
-          <div className="bg-white/10 backdrop-blur rounded-full p-1 border border-white/10">
-            <Link
-              to="/documentation"
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium text-slate-300 hover:text-white transition-all"
-            >
-              <BookOpen size={13} /> Documentation
-            </Link>
-          </div>
+        <div className="relative z-10 flex items-center">
           <PortalToggle value={portal} onChange={setPortal} />
         </div>
 

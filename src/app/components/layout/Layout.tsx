@@ -19,7 +19,7 @@ const pageTitles: Record<string, { title: string; subtitle: string }> = {
   "/ops/drivers":                 { title: "Driver Roster",          subtitle: "Fleet" },
   "/ops/tracking":                { title: "Live Map",               subtitle: "Fleet" },
   "/ops/clients":                 { title: "Client Accounts",        subtitle: "Clients" },
-  "/ops/documents/invoices":      { title: "Invoices",               subtitle: "Billing" },
+  "/ops/documents/invoices":      { title: "Invoices & Payments",    subtitle: "Billing" },
   "/ops/documents/tax-invoices":  { title: "Tax Invoices",           subtitle: "Billing" },
   "/ops/financing":               { title: "Portfolio",              subtitle: "Vehicle Financing" },
   "/ops/financing/simulator":     { title: "Acquisition Simulator",  subtitle: "Vehicle Financing" },

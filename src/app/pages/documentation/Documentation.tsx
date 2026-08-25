@@ -181,36 +181,57 @@ function NavTree({ tone, sections }: { tone: string; sections: { section: string
   );
 }
 
+// Both trees below are exactly what getFilteredSections() in Sidebar.tsx
+// actually renders today for a full-access role, nothing more — every
+// NavItem.soon entry (both portals' Dashboards, Fleet Calendar, Live Map,
+// Client Accounts, Financing, Admin) gets filtered out of the sidebar
+// entirely before NavSectionView ever sees it (withoutSoon, right at the
+// top of getFilteredSections), not shown dimmed with a pill. See "Not in
+// the nav, not gone" in Key Patterns for why those routes are still real.
+// Ops's Billing section past Invoices (Quotations, Tax Invoices) is a
+// separate, unrelated omission — not "soon" at all, just no longer a nav
+// item; both still have full standing list pages (finance/account_manager
+// stay allowlisted for them in auth.ts), reached via a booking's own
+// Documents card instead of a top-level link.
 const OPS_TREE = [
-  { section: "Dashboard", items: ["Overview", "Revenue & Reports"] },
-  { section: "Bookings & Schedule", items: ["All Requests", "All Rentals", "Fleet Calendar", "Quotations"] },
-  { section: "Fleet", items: ["Vehicles", "Driver Roster", "Live Map"] },
-  { section: "Clients", items: ["Client Accounts"] },
-  { section: "Billing", items: ["Invoices", "Tax Invoices"] },
-  { section: "Vehicle Financing", items: ["Portfolio", "Acquisition Simulator"] },
-  { section: "Admin", items: ["Roles & Permissions", "Notifications", "Audit Log"] },
+  { section: "Bookings & Schedule", items: ["All Requests", "All Rentals"] },
+  { section: "Fleet", items: ["Vehicles", "Driver Roster"] },
+  { section: "Billing", items: ["Invoices"] },
 ];
 
 const CLIENT_TREE = [
-  { section: "Dashboard", items: ["Overview"] },
-  { section: "Rentals", items: ["My Requests", "My Rentals", "Live Map"] },
+  { section: "Rentals", items: ["My Requests", "My Rentals"] },
   { section: "Billing", items: ["Invoices & Payments"] },
-  { section: "Reports", items: ["Billing History"] },
 ];
 
+// Default landings point at each role's first real, non-"Soon" destination
+// — not /ops/dashboard or /portal/dashboard, even for the two roles with
+// full access. Both Overview pages are still real routes, just unlinked
+// from either sidebar now, so landing there would show a page with nothing
+// highlighted in the nav.
 const ROLE_ROWS: [string, string, string, string][] = [
-  ["Platform Admin", "FleetCo", "/ops/dashboard", "Full access, every /ops/* screen"],
-  ["Operations Manager", "FleetCo", "/ops/requests", "Dashboard, Requests, Rentals, Calendar, Fleet"],
+  ["Platform Admin", "FleetCo", "/ops/requests", "Full access, every /ops/* screen"],
+  ["Operations Manager", "FleetCo", "/ops/requests", "Dashboard, Requests, Rentals, Calendar, Fleet, Live Map"],
   ["Account / BD Manager", "FleetCo", "/ops/clients", "Dashboard, Clients, Requests, Rentals, Quotations, Revenue"],
   ["Finance Officer", "FleetCo", "/ops/documents/invoices", "Dashboard, Invoices, Tax Invoices, Revenue, Financing"],
-  ["Read-Only", "FleetCo", "/ops/dashboard", "Full navigation, not yet write-blocked per action"],
-  ["Client Admin", "Thailand Post", "/portal/dashboard", "Full access, every /portal/* screen"],
-  ["Client Approver / Manager", "Thailand Post", "/portal/dashboard", "Dashboard, Requests, Rentals, Live Map"],
+  ["Read-Only", "FleetCo", "/ops/requests", "Full navigation, not yet write-blocked per action"],
+  ["Client Admin", "Thailand Post", "/portal/requests", "Full access, every /portal/* screen"],
+  ["Client Approver / Manager", "Thailand Post", "/portal/requests", "Dashboard, Requests, Rentals, Live Map, Quotations"],
   ["Client Requester", "Thailand Post", "/portal/requests", "Requests, Rentals, Live Map — no billing"],
-  ["Client Finance", "Thailand Post", "/portal/documents/invoices", "Invoices & Payments, Reports, Rentals"],
+  ["Client Finance", "Thailand Post", "/portal/documents/invoices", "Invoices & Payments, Tax Invoices, Reports, Rentals"],
 ];
 
 export function Documentation() {
+  // Smooth-scrolls the TOC's #anchor links (and the "back to top" browser
+  // default) instead of an instant jump — scoped to just this page's mount
+  // window via document.documentElement rather than a global CSS rule,
+  // since the authenticated app has its own scroll containers (Layout.tsx)
+  // and programmatic scrollIntoView calls elsewhere that don't need this.
+  useEffect(() => {
+    document.documentElement.classList.add("scroll-smooth");
+    return () => document.documentElement.classList.remove("scroll-smooth");
+  }, []);
+
   return (
     <div className="min-h-screen bg-slate-50">
       <div className="bg-white border-b border-slate-200">
@@ -352,6 +373,13 @@ export function Documentation() {
                 <NavTree tone="text-rose-800" sections={CLIENT_TREE} />
               </Card>
             </div>
+            <p className="text-[11px] text-slate-400 mb-6 leading-relaxed">
+              Both trees above are only what's actually linked today. Several more real, working routes exist behind
+              each portal's Dashboard, plus Fleet Calendar, Live Map, Client Accounts, Financing, and Admin — filtered
+              out of the sidebar entirely rather than shown as placeholders (Account/BD Manager's own default
+              landing, <code className="font-mono">/ops/clients</code>, is one of them). See "Not in the nav, not
+              gone" in Key Patterns.
+            </p>
 
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Role → access</p>
             <Card className="overflow-hidden !p-0">
@@ -381,6 +409,12 @@ export function Documentation() {
               </div>
             </Card>
             <p className="text-[11px] text-slate-400 mt-2">Platform Admin and Client Admin have an empty <code className="font-mono">ROLE_ALLOWED</code> array — that's the codebase's convention for "no restriction," not "no access."</p>
+            <p className="text-[11px] text-slate-400 mt-1">
+              None of the nine default landings above is <code className="font-mono">/ops/dashboard</code> or{" "}
+              <code className="font-mono">/portal/dashboard</code>, even for the two full-access roles — both Overview
+              pages are still real routes, just unlinked from either sidebar now that Overview is "Soon," so landing
+              there would show a page with nothing highlighted in the nav.
+            </p>
           </section>
 
           {/* ── Data Model ───────────────────────────────────────────── */}
@@ -557,15 +591,48 @@ export function Documentation() {
               <Card>
                 <p className="text-xs font-bold text-slate-800 mb-1.5">Cross-page document navigation</p>
                 <p className="text-[11px] text-slate-500 leading-relaxed">
-                  Bookings, quotations, and invoices each have a real routed <code className="font-mono">:id</code> page on both
-                  portals; tax invoices only on the client side (no ops equivalent exists yet — see the card below). Jumping from a
-                  document to its booking (or back) is just <code className="font-mono">navigate()</code>{" "}
-                  (<code className="font-mono">useOpenQuotation</code>/<code className="font-mono">useOpenInvoice</code>/
-                  <code className="font-mono">useOpenBookingFromDocument</code>/<code className="font-mono">useOpenTaxInvoice</code> in{" "}
+                  Every one of the three documents — Quotation, Invoice, Tax Invoice — has a real routed{" "}
+                  <code className="font-mono">:id</code> page on both portals now (ops's own Tax Invoice detail was the last gap;
+                  it used to just redirect to the parent booking). Jumping from a document to its booking (or back) is just{" "}
+                  <code className="font-mono">navigate()</code> (<code className="font-mono">useOpenQuotation</code>/
+                  <code className="font-mono">useOpenInvoice</code>/<code className="font-mono">useOpenTaxInvoice</code>/
+                  <code className="font-mono">useOpenBookingFromDocument</code> in{" "}
                   <code className="font-mono">documentNav.ts</code>), no <code className="font-mono">sessionStorage</code> handoff or
                   mount-effect to consume one. Started that way for bookings only (modeled on how the original FleetCMS repo links an
                   Order to its underlying Product) and later replaced entirely once every document type had somewhere of its own to
-                  navigate to.
+                  navigate to. Opening a document from inside its own booking's page now carries that booking's id along as router
+                  state (<code className="font-mono">fromBookingId</code>) on all three document types, not just invoices, so the
+                  sidebar keeps highlighting the booking's own section instead of jumping to the document's standing list.
+                </p>
+              </Card>
+              <Card>
+                <p className="text-xs font-bold text-slate-800 mb-1.5">Issuing a document is a page, not a modal</p>
+                <p className="text-[11px] text-slate-500 leading-relaxed">
+                  Creating a Quotation or Invoice used to be a large modal (<code className="font-mono">DocumentEditor</code>)
+                  rendered inline underneath the booking page — converted to its own route (
+                  <code className="font-mono">/ops/bookings/:id/quotation|invoice/new</code>) since it was already effectively
+                  full-screen in practice, and brief §6.2 calls this split-screen editor out by name as needing real design space.
+                  Line items, discount, and terms autosave to <code className="font-mono">sessionStorage</code> on "Save Draft"
+                  (<code className="font-mono">documentDrafts.ts</code>, keyed by booking + document type) and restore
+                  automatically next time that exact editor is reopened — the one tradeoff the old modal never had to solve
+                  (a reload just lost whatever you'd typed).
+                </p>
+              </Card>
+              <Card>
+                <p className="text-xs font-bold text-slate-800 mb-1.5">Not in the nav, not gone</p>
+                <p className="text-[11px] text-slate-500 leading-relaxed">
+                  A route that's real and working but doesn't touch either brief §9 hero flow (both portals'
+                  Dashboards, Fleet Calendar, Live Map, Client Accounts, Financing, Admin) is flagged{" "}
+                  <code className="font-mono">NavItem.soon</code> in Sidebar.tsx and filtered out of the sidebar
+                  entirely — <code className="font-mono">getFilteredSections()</code>'s{" "}
+                  <code className="font-mono">withoutSoon</code> step drops it, and the whole section along with it if
+                  every item in that section was flagged (Dashboard, Clients, Vehicle Financing, Admin all currently
+                  vanish this way). The route itself is untouched: still reachable directly, still exactly as real as
+                  any other screen, still where Account/BD Manager's own default landing (
+                  <code className="font-mono">/ops/clients</code>) points — that role lands on a page with nothing
+                  highlighted in its own sidebar. <code className="font-mono">NavSectionView</code> still carries a
+                  dimmed+pill rendering path for a soon item, ready if this filter is ever relaxed; it just never
+                  runs today, since nothing soon reaches it.
                 </p>
               </Card>
               <Card>
@@ -590,15 +657,18 @@ export function Documentation() {
               <Card>
                 <p className="text-xs font-bold text-slate-800 mb-1.5">Quotations & Tax Invoices skip the inbox</p>
                 <p className="text-[11px] text-slate-500 leading-relaxed">
-                  Unlike Invoices, neither gets its own client-portal nav item — both still have a real routed{" "}
-                  <code className="font-mono">:id</code> page, just no standalone list. The test: a screen earns a nav slot only if
-                  it has identity independent of a single parent record, or urgent state worth monitoring in aggregate across many.
-                  A quotation is inert once decided (My Requests already surfaces the ones still awaiting a decision); a tax invoice
-                  is a receipt for one specific invoice (linked straight from <code className="font-mono">InvoiceDetail</code> and from
-                  the booking's own Documents card). Invoice keeps its worklist because "what's outstanding, across everything" is
-                  the one genuinely portfolio-wide, time-sensitive concern of the three. Ops keeps separate Quotations/Invoices/Tax
-                  Invoices lists regardless — there, all three <em>are</em> cross-client triage queues, which is exactly the case
-                  this same test says deserves a standing list.
+                  On the client portal, neither gets its own nav item — both still have a real routed{" "}
+                  <code className="font-mono">:id</code> page, just no standalone list route at all. The test: a screen earns a nav
+                  slot only if it has identity independent of a single parent record, or urgent state worth monitoring in aggregate
+                  across many. A quotation is inert once decided (My Requests already surfaces the ones still awaiting a decision);
+                  a tax invoice is a receipt for one specific invoice (linked straight from <code className="font-mono">InvoiceDetail</code>{" "}
+                  and from the booking's own Documents card). Invoice keeps its worklist because "what's outstanding, across
+                  everything" is the one genuinely portfolio-wide, time-sensitive concern of the three. Ops is different: both{" "}
+                  <em>do</em> still have a real standing list page (<code className="font-mono">OpsQuotations</code>/
+                  <code className="font-mono">OpsTaxInvoices</code> — genuinely cross-client triage queues, unlike the client's
+                  single-account view), just not a top-level sidebar link to it anymore — reached via a booking's own Documents card
+                  instead, same drill-in path the client side always used. Worth knowing that's a recent simplification, not the
+                  original call: ops used to link all three directly.
                 </p>
               </Card>
             </div>

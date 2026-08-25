@@ -1,6 +1,5 @@
 import { bookingInvoices, invoiceEligible, type Booking } from "@/app/data/bookings";
 import type { Invoice } from "@/app/data/invoices";
-import type { TaxInvoice } from "@/app/data/taxInvoices";
 
 export function daysFromToday(date: string, today: string) {
   const target = new Date(`${date}T00:00:00`).getTime();
@@ -16,27 +15,14 @@ export function relativeDateLabel(date: string, today: string, verb: "Starts" | 
   return `${verb} ${Math.abs(days)} day${Math.abs(days) === 1 ? "" : "s"} ago`;
 }
 
-export function invoiceHasTaxInvoice(invoice: Invoice, taxInvoices: TaxInvoice[]) {
-  return taxInvoices.some((taxInvoice) => taxInvoice.invoiceId === invoice.id);
-}
-
 export function needsFleetCoRentalAction(booking: Booking) {
   return booking.status === "Accepted";
 }
 
-export function fleetCoInvoiceAction(invoice: Invoice, taxInvoices: TaxInvoice[]) {
-  if (invoice.status === "Payment Submitted") return "Verify submitted payment";
-  if (invoice.status === "Paid") return invoiceHasTaxInvoice(invoice, taxInvoices) ? "Settled" : "Issue tax invoice";
-  if (invoice.status === "Overdue") return "Follow up overdue payment";
-  if (invoice.status === "Payment Issue") return "Await corrected payment claim";
-  return "Await client payment";
-}
-
-export function fleetCoNextAction(booking: Booking, invoices: Invoice[], taxInvoices: TaxInvoice[], today: string) {
+export function fleetCoNextAction(booking: Booking, invoices: Invoice[], today: string) {
   const latestInvoice = bookingInvoices(booking.id, invoices)[0];
 
   if (latestInvoice?.status === "Payment Submitted") return "Verify submitted payment";
-  if (latestInvoice?.status === "Paid" && !invoiceHasTaxInvoice(latestInvoice, taxInvoices)) return "Issue tax invoice";
   if (latestInvoice?.status === "Overdue") return "Follow up overdue payment";
   if (latestInvoice?.status === "Payment Issue") return "Await corrected payment claim";
   if (latestInvoice?.status === "Unpaid") return "Await client payment";

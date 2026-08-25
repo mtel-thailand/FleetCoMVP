@@ -5,6 +5,8 @@
 // is a placeholder name pending final branding/entity registration (cover page).
 // Fill these in once the real operating entity is registered.
 
+import type { QuotationLineItem } from "./quotations";
+
 export type TaxInvoice = {
   id: string;
   invoiceId: string;
@@ -17,16 +19,39 @@ export type TaxInvoice = {
   buyerTaxId: string;
   buyerAddress: string;
   buyerBranch: string;
+  lineItems?: QuotationLineItem[];
   subtotal: number;
   discount: number;
+  vatRate?: number;
   vatAmount: number;
   totalAmount: number;
   amountInWordsThai: string;
   issuedAt: string;
   created: string;
+  // Verification metadata records the FleetCo approval event
+  // without pretending the prototype has issued a certificate-backed legal
+  // signature. A production e-Tax integration can replace this method with
+  // the real certificate and signature reference.
+  verifiedByName?: string;
+  verifiedByRole?: string;
+  verifiedAt?: string;
+  verificationMethod?: string;
 };
 
 export const mockTaxInvoices: TaxInvoice[] = [
+  {
+    id: "TI-2026-0004", invoiceId: "INV-2026-0002", bookingId: "BK-2026-0009", clientId: "CLI-001",
+    sellerName: "FleetCo Operations Co., Ltd. (entity name pending)",
+    sellerTaxId: "0000000000000",
+    sellerAddress: "Registered address pending — FleetCo entity not yet finalized.",
+    buyerName: "Thailand Post Co., Ltd.",
+    buyerTaxId: "0107536000174",
+    buyerAddress: "111 Praram 9 Rd, Huai Khwang, Bangkok 10310, Thailand",
+    buyerBranch: "Head Office",
+    subtotal: 17000, discount: 0, vatAmount: 1190, totalAmount: 18190,
+    amountInWordsThai: "หนึ่งหมื่นแปดพันหนึ่งร้อยเก้าสิบบาทถ้วน",
+    issuedAt: "2026-08-05 14:00", created: "2026-08-05 14:00",
+  },
   {
     id: "TI-2026-0001", invoiceId: "INV-2026-0003", bookingId: "BK-2026-0010", clientId: "CLI-001",
     sellerName: "FleetCo Operations Co., Ltd. (entity name pending)",

@@ -81,7 +81,7 @@ export const mockQuotations: Quotation[] = [
     status: "Accepted", issuedAt: "2026-08-22 10:00", created: "2026-08-22 10:00", updated: "2026-08-23 11:30",
   },
   {
-    id: "QT-2026-0017", version: 1, bookingId: "BK-2026-0023", clientId: "CLI-002",
+    id: "QT-2026-0017", version: 1, bookingId: "BK-2026-0023", clientId: "CLI-001",
     lineItems: [{ description: "Pickup — east Bangkok transfer routes (15 days)", vehicleClass: "Pickup", quantity: 1, unit: "vehicle (15-day period)", unitPrice: 24500, amount: 24500 }],
     discount: 0, vatRate: 0.07, remarks: "Dedicated vehicle and driver. Fuel excluded.",
     paymentTerms: "Net 30 from invoice date.", validUntil: "2026-08-28",
@@ -109,10 +109,10 @@ export const mockQuotations: Quotation[] = [
     status: "Accepted", issuedAt: "2026-05-22 09:00", created: "2026-05-22 09:00", updated: "2026-05-25 10:00",
   },
   {
-    id: "QT-2026-0005", version: 1, bookingId: "BK-2026-0005", clientId: "CLI-002",
+    id: "QT-2026-0005", version: 1, bookingId: "BK-2026-0005", clientId: "CLI-001",
     lineItems: [{ description: "4-Wheel truck — same-day overflow delivery", vehicleClass: "4-Wheel Truck", quantity: 1, unit: "vehicle (1 day)", unitPrice: 2800, amount: 2800 }],
     discount: 0, vatRate: 0.07, remarks: "Same-day dispatch, subject to availability.",
-    paymentTerms: "Net 15 from invoice date.", validUntil: "2026-08-14",
+    paymentTerms: "Net 30 from invoice date.", validUntil: "2026-08-14",
     status: "Accepted", issuedAt: "2026-08-13 17:00", created: "2026-08-13 17:00", updated: "2026-08-14 08:30",
   },
   {
@@ -130,10 +130,10 @@ export const mockQuotations: Quotation[] = [
     status: "Accepted", issuedAt: "2026-07-06 08:30", created: "2026-07-06 08:30", updated: "2026-07-06 09:15",
   },
   {
-    id: "QT-2026-0008", version: 1, bookingId: "BK-2026-0009", clientId: "CLI-002",
+    id: "QT-2026-0008", version: 1, bookingId: "BK-2026-0009", clientId: "CLI-001",
     lineItems: [{ description: "4-Wheel truck — 7 days", vehicleClass: "4-Wheel Truck", quantity: 1, unit: "vehicle (7-day period)", unitPrice: 17500, amount: 17500 }],
     discount: 500, vatRate: 0.07, remarks: "Repeat-client discount applied.",
-    paymentTerms: "Net 15 from invoice date.", validUntil: "2026-07-22",
+    paymentTerms: "Net 30 from invoice date.", validUntil: "2026-07-22",
     status: "Accepted", issuedAt: "2026-07-15 09:30", created: "2026-07-15 09:30", updated: "2026-07-18 11:00",
   },
   {

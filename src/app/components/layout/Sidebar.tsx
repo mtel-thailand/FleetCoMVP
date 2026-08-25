@@ -117,7 +117,7 @@ export const OPS_NAV_SECTIONS: NavSection[] = [
     section: "Billing",
     icon: <Wallet size={16} />,
     items: [
-      { label: "Invoices", path: "/ops/documents/invoices", icon: <FileCheck2 size={16} /> },
+      { label: "Invoices & Payments", path: "/ops/documents/invoices", icon: <FileCheck2 size={16} /> },
     ],
   },
   {

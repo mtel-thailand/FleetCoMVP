@@ -93,29 +93,11 @@ export const mockClients: ClientAccount[] = [
     created: "2026-05-02 09:00",
     updated: "2026-08-01 10:00",
   },
-  {
-    id: "CLI-002",
-    name: "Siam Logistics Co., Ltd.",
-    taxId: "0105562011832",
-    registeredAddress: "88 Bang Na-Trat Rd, Bang Na, Bangkok 10260, Thailand",
-    branch: "Head Office",
-    billingTerms: "Net 15",
-    creditTermsDays: 15,
-    status: "Active",
-    rateCard: [
-      { vehicleClass: "Van", durationTier: "Ad hoc / Daily", pricePerDay: 2400 },
-      { vehicleClass: "4-Wheel Truck", durationTier: "Ad hoc / Daily", pricePerDay: 3000 },
-    ],
-    contractFileName: null,
-    created: "2026-07-20 09:00",
-    updated: "2026-07-20 09:00",
-  },
 ];
 
 export const mockClientUsers: ClientUser[] = [
   { id: "CU-001", clientId: "CLI-001", name: "Naruemon Srisai", email: "naruemon.s@thailandpost.co.th", role: "client_approver", status: "Active" },
   { id: "CU-002", clientId: "CLI-001", name: "Pakawat Chuenjai", email: "pakawat.c@thailandpost.co.th", role: "client_requester", status: "Active" },
   { id: "CU-003", clientId: "CLI-001", name: "Suphaporn Wongsa", email: "suphaporn.w@thailandpost.co.th", role: "client_finance", status: "Active" },
-  { id: "CU-004", clientId: "CLI-002", name: "Ekapop Meesuk", email: "ekapop.m@siamlogistics.co.th", role: "client_approver", status: "Active" },
   { id: "CU-005", clientId: "CLI-001", name: "Kanyarat Phromsri", email: "kanyarat.p@thailandpost.co.th", role: "client_admin", status: "Active" },
 ];

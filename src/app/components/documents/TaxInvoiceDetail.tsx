@@ -20,7 +20,11 @@ import { A4Document } from "@/app/components/documents/A4Document";
 // OpsTaxInvoiceDetail.tsx — this component never needed portal-specific
 // logic to begin with (useOpenBookingFromDocument already handles both).
 
-function TaxInvoiceDocument({ taxInvoice }: { taxInvoice: TaxInvoice }) {
+export function TaxInvoiceDocument({ taxInvoice }: { taxInvoice: TaxInvoice }) {
+  const lineItems = taxInvoice.lineItems ?? [];
+  const hasLineItems = lineItems.length > 0;
+  const vatRate = taxInvoice.vatRate ?? 0.07;
+
   const head = (
     <div className="print:break-inside-avoid">
       <div className="flex items-start justify-between border-b border-slate-200 pb-4">
@@ -75,13 +79,38 @@ function TaxInvoiceDocument({ taxInvoice }: { taxInvoice: TaxInvoice }) {
     </div>
   );
 
+  const columns = hasLineItems ? (
+    <tr className="border-b-2 border-slate-800 text-slate-500">
+      <th className="w-6 py-2 text-left font-medium">#</th>
+      <th className="py-2 text-left font-medium">Description / รายละเอียด</th>
+      <th className="w-14 py-2 text-right font-medium">Qty</th>
+      <th className="w-24 py-2 text-left font-medium">Unit / หน่วย</th>
+      <th className="w-28 py-2 text-right font-medium">Unit Price</th>
+      <th className="w-28 py-2 text-right font-medium">Amount</th>
+    </tr>
+  ) : undefined;
+
+  const rows = lineItems.map((item, index) => (
+    <tr key={index} className="border-b border-slate-100 align-top print:break-inside-avoid">
+      <td className="py-2 text-slate-400">{index + 1}</td>
+      <td className="py-2 pr-2">
+        <p className="text-slate-800">{item.description || "—"}</p>
+        <p className="text-[10px] text-slate-400">{item.vehicleClass}</p>
+      </td>
+      <td className="py-2 text-right text-slate-700">{item.quantity}</td>
+      <td className="py-2 text-slate-700">{item.unit}</td>
+      <td className="py-2 text-right text-slate-700">{formatCurrency(item.unitPrice)}</td>
+      <td className="py-2 text-right font-medium text-slate-900">{formatCurrency(item.amount)}</td>
+    </tr>
+  ));
+
   const tail = (
     <div className="print:break-inside-avoid">
-      <div className="mt-8 flex justify-end">
+      <div className={`${hasLineItems ? "pt-3" : "mt-8"} flex justify-end`}>
         <div className="w-72 space-y-1.5 text-[12px]">
           <div className="flex justify-between"><span className="text-slate-500">Subtotal / ยอดรวม</span><span>{formatCurrency(taxInvoice.subtotal)}</span></div>
           {taxInvoice.discount > 0 && <div className="flex justify-between"><span className="text-slate-500">Discount / ส่วนลด</span><span>−{formatCurrency(taxInvoice.discount)}</span></div>}
-          <div className="flex justify-between"><span className="text-slate-500">VAT / ภาษีมูลค่าเพิ่ม (7%)</span><span>{formatCurrency(taxInvoice.vatAmount)}</span></div>
+          <div className="flex justify-between"><span className="text-slate-500">VAT / ภาษีมูลค่าเพิ่ม ({Math.round(vatRate * 100)}%)</span><span>{formatCurrency(taxInvoice.vatAmount)}</span></div>
           <div className="mt-2 flex justify-between border-t border-slate-800 pt-2 text-base font-bold">
             <span>Total Amount</span>
             <span>{formatCurrency(taxInvoice.totalAmount)}</span>
@@ -93,6 +122,11 @@ function TaxInvoiceDocument({ taxInvoice }: { taxInvoice: TaxInvoice }) {
       <div className="mt-8 border-t border-slate-100 pt-4 text-[11px] text-slate-500">
         <p><span className="text-slate-400">Issued / วันที่ออก:</span> {formatDate(taxInvoice.issuedAt)}</p>
         <p className="mt-1"><span className="text-slate-400">Reference invoice / อ้างอิงใบแจ้งหนี้:</span> {taxInvoice.invoiceId}</p>
+        <div className="mt-3 rounded-md bg-slate-50 px-3 py-2.5">
+          <p className="font-semibold text-slate-700">Verification record / บันทึกการตรวจสอบ</p>
+          <p className="mt-1">Verified and issued by {taxInvoice.verifiedByName ?? "FleetCo Finance"} · {taxInvoice.verifiedByRole ?? "Authorized FleetCo officer"}</p>
+          <p>{formatDate(taxInvoice.verifiedAt ?? taxInvoice.issuedAt)} · Method: {taxInvoice.verificationMethod ?? "Historical record"}</p>
+        </div>
       </div>
 
       <p className="mt-7 text-[10px] text-slate-400">
@@ -100,18 +134,6 @@ function TaxInvoiceDocument({ taxInvoice }: { taxInvoice: TaxInvoice }) {
         <br />ใบกำกับภาษีนี้ไม่สามารถแก้ไขได้หลังออกเอกสาร การแก้ไขทำผ่านใบลดหนี้
       </p>
 
-      <div className="mt-16 flex justify-between text-[11px] text-slate-400">
-        <div className="w-44 text-center">
-          <div className="h-12 border-b border-slate-300" />
-          <p className="mt-1">Authorized Signature — FleetCo</p>
-          <p>ลายมือชื่อผู้มีอำนาจ — ฟลีทโค</p>
-        </div>
-        <div className="w-44 text-center">
-          <div className="h-12 border-b border-slate-300" />
-          <p className="mt-1">Authorized Signature — Client</p>
-          <p>ลายมือชื่อผู้มีอำนาจ — ลูกค้า</p>
-        </div>
-      </div>
     </div>
   );
 
@@ -120,6 +142,8 @@ function TaxInvoiceDocument({ taxInvoice }: { taxInvoice: TaxInvoice }) {
       docNumber={taxInvoice.id}
       docTypeLabel="TAX INVOICE"
       head={head}
+      columns={columns}
+      rows={rows}
       tail={tail}
     />
   );

@@ -3,11 +3,11 @@
 // visible immediately to anything else reading them.
 import { useEffect, useState } from "react";
 import { mockQuotations, type Quotation } from "@/app/data/quotations";
-import { loadPersisted, mergeSeedRecords, savePersisted, subscribePersisted } from "@/app/lib/persistence";
+import { loadPersisted, mergeSeedRecords, savePersisted, scopeToThailandPost, subscribePersisted } from "@/app/lib/persistence";
 
 type Listener = () => void;
 
-let quotations: Quotation[] = mergeSeedRecords(loadPersisted("quotations", [...mockQuotations]), mockQuotations);
+let quotations: Quotation[] = scopeToThailandPost(mergeSeedRecords(loadPersisted("quotations", [...mockQuotations]), mockQuotations));
 const listeners = new Set<Listener>();
 
 function notify() {
@@ -17,7 +17,7 @@ function notify() {
 
 // Cross-tab live sync — see persistence.ts.
 subscribePersisted<Quotation[]>("quotations", (value) => {
-  quotations = value;
+  quotations = scopeToThailandPost(value);
   notify();
 });
 

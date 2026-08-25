@@ -6,7 +6,6 @@ import {
   CalendarDays,
   CheckCircle2,
   Clock3,
-  FileCheck2,
   FileText,
   Inbox,
   Navigation,
@@ -19,15 +18,13 @@ import {
 import { bookingInvoices, fleetCoBookingStatusLabel, type Booking } from "@/app/data/bookings";
 import { formatCurrency } from "@/app/data/formatters";
 import type { Invoice } from "@/app/data/invoices";
-import type { TaxInvoice } from "@/app/data/taxInvoices";
 import { StatusBadge } from "@/app/components/ui/StatusBadge";
 import { formatDate } from "@/app/components/ui/utils";
 import { useBookings } from "@/app/lib/bookingsStore";
 import { useClients } from "@/app/lib/clientsStore";
 import { useInvoices } from "@/app/lib/invoicesStore";
-import { useTaxInvoices } from "@/app/lib/taxInvoicesStore";
 import { useVehicles } from "@/app/lib/vehiclesStore";
-import { daysFromToday, fleetCoNextAction, invoiceHasTaxInvoice, relativeDateLabel } from "@/app/lib/fleetCoActions";
+import { daysFromToday, fleetCoNextAction, relativeDateLabel } from "@/app/lib/fleetCoActions";
 
 type WorkLane = "all" | "operations" | "commercial" | "finance";
 type WorkPriority = "urgent" | "high" | "normal";
@@ -171,7 +168,6 @@ export function OperationsDashboard() {
   const clients = useClients();
   const vehicles = useVehicles();
   const invoices = useInvoices();
-  const taxInvoices = useTaxInvoices();
   const today = new Date().toISOString().slice(0, 10);
   const clientById = new Map(clients.map((client) => [client.id, client]));
 
@@ -246,21 +242,6 @@ export function OperationsDashboard() {
       icon: <AlertTriangle size={15} />,
     });
   });
-
-  invoices
-    .filter((invoice) => invoice.status === "Paid" && !invoiceHasTaxInvoice(invoice, taxInvoices))
-    .forEach((invoice) => {
-      workItems.push({
-        id: `tax-${invoice.id}`,
-        lane: "finance",
-        priority: "high",
-        title: "Issue tax invoice",
-        detail: `${invoice.id} · verified payment · ${clientById.get(invoice.clientId)?.name ?? invoice.clientId}`,
-        timing: `Paid ${formatDate(invoice.paymentDate)}`,
-        to: `/ops/bookings/${invoice.bookingId}`,
-        icon: <FileCheck2 size={15} />,
-      });
-    });
 
   bookings
     .filter((booking) => booking.status === "Completed" && bookingInvoices(booking.id, invoices).length === 0)
@@ -411,7 +392,7 @@ export function OperationsDashboard() {
                       <td className="px-4 py-3 text-slate-600">{clientById.get(booking.clientId)?.name ?? booking.clientId}</td>
                       <td className="px-4 py-3 text-slate-600">{booking.quantity}× {booking.vehicleClassRequested}</td>
                       <td className="whitespace-nowrap px-4 py-3 text-slate-600">{formatDate(booking.startDate)} – {formatDate(booking.endDate)}</td>
-                      <td className="px-4 py-3 font-medium text-slate-700">{fleetCoNextAction(booking, invoices, taxInvoices, today)}</td>
+                      <td className="px-4 py-3 font-medium text-slate-700">{fleetCoNextAction(booking, invoices, today)}</td>
                       <td className="px-4 py-3">
                         <div className="flex flex-wrap items-center gap-1.5">
                           <StatusBadge status={fleetCoBookingStatusLabel(booking)} />

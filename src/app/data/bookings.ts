@@ -304,7 +304,7 @@ export const mockBookings: Booking[] = [
     created: "2026-08-21 09:10", updated: "2026-08-23 11:30",
   },
   {
-    id: "BK-2026-0023", clientId: "CLI-002", requestedByName: "Ekapop Meesuk",
+    id: "BK-2026-0023", clientId: "CLI-001", requestedByName: "Suphaporn Wongsa",
     rentalType: "Medium term", vehicleClassRequested: "Pickup", quantity: 1,
     startDate: "2026-09-18", endDate: "2026-10-02",
     pickupLocation: "Bang Na Distribution Hub", jobNotes: "Dedicated pickup for east Bangkok transfer routes.",
@@ -342,15 +342,15 @@ export const mockBookings: Booking[] = [
     created: "2026-05-20 10:00", updated: "2026-07-15 08:00",
   },
   {
-    id: "BK-2026-0005", clientId: "CLI-002", requestedByName: "Ekapop Meesuk",
+    id: "BK-2026-0005", clientId: "CLI-001", requestedByName: "Suphaporn Wongsa",
     rentalType: "Ad hoc / Daily", vehicleClassRequested: "4-Wheel Truck", quantity: 1,
     startDate: "2026-08-14", endDate: "2026-08-14",
     pickupLocation: "Bang Na Distribution Hub", jobNotes: "Same-day overflow delivery.",
     status: "Active", assignments: [{ vehicleId: "VEH-001", driverId: "DRV-001" }], quotationId: "QT-2026-0005",
     // After QT-2026-0005's own acceptance (2026-08-14 08:30), not before it.
     assignedAt: "2026-08-14 08:45",
-    isRecurringBilling: false,
-    created: "2026-08-13 16:40", updated: "2026-08-14 08:45",
+    invoiceId: "INV-2026-0010", isRecurringBilling: false,
+    created: "2026-08-13 16:40", updated: "2026-08-15 16:20",
   },
   {
     id: "BK-2026-0007", clientId: "CLI-001", requestedByName: "Pakawat Chuenjai",
@@ -378,7 +378,7 @@ export const mockBookings: Booking[] = [
     created: "2026-07-04 08:00", updated: "2026-07-07 09:00",
   },
   {
-    id: "BK-2026-0009", clientId: "CLI-002", requestedByName: "Ekapop Meesuk",
+    id: "BK-2026-0009", clientId: "CLI-001", requestedByName: "Naruemon Srisai",
     rentalType: "Short term", vehicleClassRequested: "4-Wheel Truck", quantity: 1,
     startDate: "2026-07-20", endDate: "2026-07-27",
     pickupLocation: "Bang Na Distribution Hub", jobNotes: "",
@@ -386,7 +386,7 @@ export const mockBookings: Booking[] = [
     status: "Completed", assignments: [{ vehicleId: "VEH-006", driverId: "DRV-006" }], quotationId: "QT-2026-0008",
     // After QT-2026-0008's own acceptance (2026-07-18 11:00), not before it.
     assignedAt: "2026-07-19 09:00",
-    invoiceId: "INV-2026-0002", isRecurringBilling: false,
+    invoiceId: "INV-2026-0002", taxInvoiceId: "TI-2026-0004", isRecurringBilling: false,
     created: "2026-07-14 09:00", updated: "2026-08-05 14:00",
   },
   {
@@ -412,16 +412,15 @@ export const mockBookings: Booking[] = [
     created: "2026-08-12 10:00", updated: "2026-08-13 09:00",
   },
   {
-    id: "BK-2026-0012", clientId: "CLI-002", requestedByName: "Ekapop Meesuk",
+    id: "BK-2026-0012", clientId: "CLI-001", requestedByName: "Kanyarat Phromsri",
     rentalType: "Short term", vehicleClassRequested: "Pickup", quantity: 1,
     startDate: "2026-08-25", endDate: "2026-09-01",
     pickupLocation: "Bang Na Distribution Hub", jobNotes: "Project postponed internally.",
     status: "Cancelled", isRecurringBilling: false,
     created: "2026-08-07 11:00", updated: "2026-08-08 09:00",
   },
-  // Thailand Post's own Cancelled example — BK-2026-0012 above is Cancelled
-  // too, but it belongs to CLI-002, so it never shows up in this client's
-  // portal. Cancelled straight from Requested (no quotation ever issued) —
+  // Another Cancelled example for Thailand Post. Cancelled straight from
+  // Requested (no quotation ever issued) —
   // the simplest of the three states cancellable covers (Requested/Accepted/
   // Assigned, see ClientBookingDetail.tsx), and self-contained: no matching
   // Quotation record needed since this booking never got one.

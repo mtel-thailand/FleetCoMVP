@@ -10,11 +10,17 @@
 // for one shared array.
 import { useEffect, useState } from "react";
 import { mockBookings, type Booking } from "@/app/data/bookings";
-import { loadPersisted, mergeSeedRecords, savePersisted, subscribePersisted } from "@/app/lib/persistence";
+import { loadPersisted, mergeSeedRecords, savePersisted, scopeToThailandPost, subscribePersisted } from "@/app/lib/persistence";
 
 type Listener = () => void;
 
-let bookings: Booking[] = mergeSeedRecords(loadPersisted("bookings", [...mockBookings]), mockBookings);
+function scopeBookings(records: Booking[]): Booking[] {
+  return scopeToThailandPost(records).map((booking) =>
+    booking.requestedByName === "Ekapop Meesuk" ? { ...booking, requestedByName: "Suphaporn Wongsa" } : booking,
+  );
+}
+
+let bookings: Booking[] = scopeBookings(mergeSeedRecords(loadPersisted("bookings", [...mockBookings]), mockBookings));
 const listeners = new Set<Listener>();
 
 function notify() {
@@ -25,7 +31,7 @@ function notify() {
 // Cross-tab live sync — see persistence.ts. Fires when a *different* tab
 // changes bookings (e.g. the client portal open in another window).
 subscribePersisted<Booking[]>("bookings", (value) => {
-  bookings = value;
+  bookings = scopeBookings(value);
   notify();
 });
 
