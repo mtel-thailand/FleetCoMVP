@@ -60,4 +60,14 @@ export const mockDrivers: Driver[] = [
     licenseClass: "Standard", licenseExpiry: "2025-12-01", employmentStatus: "Inactive",
     created: "2019-04-11 10:00", updated: "2026-01-05 10:00",
   },
+  {
+    id: "DRV-009", name: "Chaiwat Pradit", phone: "+66-81-234-5679", licenseNumber: "TH-DL-94621",
+    licenseClass: "Heavy Vehicle", licenseExpiry: "2028-08-30", employmentStatus: "Active",
+    homeVehicleId: "VEH-010", created: "2024-10-20 10:00", updated: "2026-08-19 09:00",
+  },
+  {
+    id: "DRV-010", name: "Saran Khamdee", phone: "+66-81-234-5680", licenseNumber: "TH-DL-95742",
+    licenseClass: "Standard", licenseExpiry: "2028-11-15", employmentStatus: "Active",
+    homeVehicleId: "VEH-009", created: "2024-09-12 10:00", updated: "2026-08-18 09:00",
+  },
 ];

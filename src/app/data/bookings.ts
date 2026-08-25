@@ -142,6 +142,20 @@ export function bookingStatusLabel(booking: Booking): string {
   return booking.status;
 }
 
+/** FleetCo-facing rental wording. Expose the operational state represented
+ *  by Accepted/Assigned instead of the completed actions that produced it. */
+export function fleetCoRentalStatusLabel(status: BookingStatus): string {
+  if (status === "Accepted") return "Awaiting Assignment";
+  if (status === "Assigned") return "Scheduled";
+  return status;
+}
+
+export function fleetCoBookingStatusLabel(booking: Booking): string {
+  const rejectedOrDeclined = bookingStatusLabel(booking);
+  if (rejectedOrDeclined !== booking.status) return rejectedOrDeclined;
+  return fleetCoRentalStatusLabel(booking.status);
+}
+
 /** My Rentals' own simplification, on top of (not instead of) the real
  *  status — client-facing only, ops's own AllRequests/AllRentals still show
  *  Accepted and Assigned as their own distinct statuses, since "is a vehicle
@@ -280,6 +294,22 @@ export const mockBookings: Booking[] = [
     pickupLocation: "Bangkok GPO, Charoen Krung Rd", jobNotes: "Quarterly trunk route coverage for Bangkok metro dispatch.",
     status: "Quoted", quotationId: "QT-2026-0015", isRecurringBilling: true,
     created: "2026-08-17 10:15", updated: "2026-08-19 16:45",
+  },
+  {
+    id: "BK-2026-0022", clientId: "CLI-001", requestedByName: "Suphaporn Wongsa",
+    rentalType: "Short term", vehicleClassRequested: "Van", quantity: 2,
+    startDate: "2026-09-14", endDate: "2026-09-20",
+    pickupLocation: "Bang Sue Distribution Center", jobNotes: "Two vans for regional parcel sorting support.",
+    status: "Accepted", quotationId: "QT-2026-0016", isRecurringBilling: false,
+    created: "2026-08-21 09:10", updated: "2026-08-23 11:30",
+  },
+  {
+    id: "BK-2026-0023", clientId: "CLI-002", requestedByName: "Ekapop Meesuk",
+    rentalType: "Medium term", vehicleClassRequested: "Pickup", quantity: 1,
+    startDate: "2026-09-18", endDate: "2026-10-02",
+    pickupLocation: "Bang Na Distribution Hub", jobNotes: "Dedicated pickup for east Bangkok transfer routes.",
+    status: "Accepted", quotationId: "QT-2026-0017", isRecurringBilling: false,
+    created: "2026-08-20 13:45", updated: "2026-08-22 15:15",
   },
   {
     id: "BK-2026-0003", clientId: "CLI-001", requestedByName: "Naruemon Srisai",

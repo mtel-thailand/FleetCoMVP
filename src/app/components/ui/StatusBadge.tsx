@@ -34,6 +34,8 @@ export function StatusBadge({ status, variant }: { status: string; variant?: "es
     Requested: "bg-amber-100 text-amber-700",
     Quoted: "bg-sky-100 text-sky-700",
     Accepted: "bg-violet-100 text-violet-700",
+    "Awaiting Assignment": "bg-violet-100 text-violet-700",
+    Scheduled: "bg-blue-100 text-blue-700",
     // Active / Assigned / Cancelled reuse the generic entries above.
     Completed: "bg-teal-100 text-teal-700",
     Declined: "bg-rose-100 text-rose-700",

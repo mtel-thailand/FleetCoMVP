@@ -10,9 +10,7 @@ import {
   IdCard,
   MapPin,
   Building2,
-  FileText,
   FileCheck2,
-  Receipt,
   Landmark,
   Calculator,
   Shield,
@@ -44,8 +42,6 @@ import { useBookings } from "@/app/lib/bookingsStore";
 import { useQuotations } from "@/app/lib/quotationsStore";
 import { useInvoices } from "@/app/lib/invoicesStore";
 import { useTaxInvoices } from "@/app/lib/taxInvoicesStore";
-import { useIssueReports } from "@/app/lib/issueReportsStore";
-import { SHOW_ISSUE_REPORTS } from "@/app/data/issueReports";
 import { CLIENT_ID } from "@/app/lib/currentClient";
 
 export interface NavItem {
@@ -97,13 +93,6 @@ export const OPS_NAV_SECTIONS: NavSection[] = [
       { label: "All Requests", path: "/ops/requests", icon: <Inbox size={16} /> },
       { label: "All Rentals", path: "/ops/rentals", icon: <CalendarCheck size={16} /> },
       { label: "Fleet Calendar", path: "/ops/calendar", icon: <CalendarRange size={16} />, soon: true },
-      // Moved from the old "Documents" section — a quotation belongs to
-      // Flow A (Request → Quotation → Acceptance), not Flow B (Invoice →
-      // Paid → Tax Invoice), so grouping it with Invoices/Tax Invoices was
-      // mixing two different flows under one label. It lives with the rest
-      // of the request/booking lifecycle instead, same section as the
-      // request it prices.
-      { label: "Quotations", path: "/ops/documents/quotations", icon: <FileText size={16} /> },
     ],
   },
   {
@@ -123,16 +112,12 @@ export const OPS_NAV_SECTIONS: NavSection[] = [
     ],
   },
   {
-    // Renamed from "Documents" — now just Flow B's two billing documents,
-    // not a catch-all for every document type (Quotations moved out, see
-    // above). Same section name and icon (Wallet) as the client portal's
-    // own Billing section, since it's the same underlying concern from
-    // each side.
+    // Keep the primary billing workspace visible. Supporting documents stay
+    // reachable from their related request or invoice records.
     section: "Billing",
     icon: <Wallet size={16} />,
     items: [
-      { label: "Invoices",     path: "/ops/documents/invoices",     icon: <FileCheck2 size={16} /> },
-      { label: "Tax Invoices", path: "/ops/documents/tax-invoices", icon: <Receipt size={16} /> },
+      { label: "Invoices", path: "/ops/documents/invoices", icon: <FileCheck2 size={16} /> },
     ],
   },
   {
@@ -436,7 +421,6 @@ export function Sidebar({
   const quotations = useQuotations();
   const invoices = useInvoices();
   const taxInvoices = useTaxInvoices();
-  const issueReports = useIssueReports();
   const scrollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // A booking detail page's real URL (/portal/bookings/:id) doesn't match
@@ -483,14 +467,13 @@ export function Sidebar({
       ).length;
       if (needsPayment > 0) badgeByPath["/portal/documents/invoices"] = needsPayment;
     }
-  } else if (SHOW_ISSUE_REPORTS) {
-    // Unscoped by client — ops manages every account, unlike the client
-    // portal's own single-client badges above.
-    const openIssues = issueReports.filter((r) => r.status === "Open").length;
-    // Issue reports are only ever raised on active rentals (ClientBookingDetail's
-    // Report an Issue action isn't offered pre-Accepted) — All Rentals, not
-    // All Requests.
-    if (openIssues > 0) badgeByPath["/ops/rentals"] = openIssues;
+  } else {
+    // Match each FleetCo list's first, actionable tab so the sidebar count
+    // predicts exactly what the user sees after opening the page.
+    const needsQuotation = bookings.filter((b) => b.status === "Requested").length;
+    const awaitingAssignment = bookings.filter((b) => b.status === "Accepted").length;
+    if (needsQuotation > 0) badgeByPath["/ops/requests"] = needsQuotation;
+    if (awaitingAssignment > 0) badgeByPath["/ops/rentals"] = awaitingAssignment;
   }
   const filteredSections = applyBadges(baseSections, badgeByPath);
 

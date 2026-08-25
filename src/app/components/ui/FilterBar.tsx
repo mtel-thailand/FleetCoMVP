@@ -5,6 +5,7 @@ import { Calendar as DayCalendar } from "./calendar";
 import { format } from "date-fns";
 import { toast } from "sonner";
 import type { DateRange } from "react-day-picker";
+import { SHOW_EXPORTS } from "@/app/lib/featureFlags";
 
 const periodOptions = ["All time", "Today", "Last 7 days", "Last 30 days", "This month", "Custom range"];
 
@@ -257,7 +258,7 @@ export function FilterBar({
       {extraFilters}
 
       <div className="ml-auto flex items-center gap-2">
-        {showExport && (
+        {SHOW_EXPORTS && showExport && (
           <div className="relative" ref={exportRef}>
             <button
               onClick={() => {

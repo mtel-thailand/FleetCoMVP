@@ -20,9 +20,9 @@ import type { LucideIcon } from "lucide-react";
 // tooltip only fires for the plain-string case — every existing call site
 // still gets it unchanged; the richer case just skips it rather than
 // stringifying JSX into something unreadable.
-export function StatTile({ icon: Icon, label, value }: { icon: LucideIcon; label: string; value: ReactNode }) {
+export function StatTile({ icon: Icon, label, value, className = "" }: { icon: LucideIcon; label: string; value: ReactNode; className?: string }) {
   return (
-    <div className="bg-slate-50 rounded-lg p-3">
+    <div className={`bg-slate-50 rounded-lg p-3 ${className}`}>
       <Icon size={13} className="text-[var(--portal-accent)] mb-2" />
       <p className="text-[10px] font-normal uppercase tracking-wider text-slate-400 mb-0.5">{label}</p>
       <p className="text-xs font-medium text-slate-800 truncate" title={typeof value === "string" ? value : undefined}>{value}</p>

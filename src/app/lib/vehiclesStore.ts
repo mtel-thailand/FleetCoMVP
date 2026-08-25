@@ -4,11 +4,11 @@
 // independent copies.
 import { useEffect, useState } from "react";
 import { mockVehicles, type Vehicle } from "@/app/data/vehicles";
-import { loadPersisted, savePersisted, subscribePersisted } from "@/app/lib/persistence";
+import { loadPersisted, mergeSeedRecords, savePersisted, subscribePersisted } from "@/app/lib/persistence";
 
 type Listener = () => void;
 
-let vehicles: Vehicle[] = loadPersisted("vehicles", [...mockVehicles]);
+let vehicles: Vehicle[] = mergeSeedRecords(loadPersisted("vehicles", [...mockVehicles]), mockVehicles);
 const listeners = new Set<Listener>();
 
 function notify() {

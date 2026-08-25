@@ -122,4 +122,22 @@ export const mockVehicles: Vehicle[] = [
     maintenanceLog: [],
     created: "2022-09-09 10:00", updated: "2026-08-13 16:00",
   },
+  {
+    id: "VEH-009", plateNumber: "9กญ 2211", vehicleClass: "Van", brand: "Toyota", model: "Hiace",
+    year: 2024, capacityKg: 900, homeDepot: "Bangkok — Lat Krabang", status: "Available", financed: true,
+    registrationExpiry: "2027-09-12", insuranceExpiry: "2027-02-18", voluntaryInsuranceExpiry: "2027-02-18",
+    taxStickerExpiry: "2027-09-12", lastInspection: "2026-08-05", odometerKm: 12400,
+    statusHistory: [{ status: "Available", at: "2026-08-18 09:00", note: "Ready for assignment demo" }],
+    maintenanceLog: [],
+    created: "2024-09-12 10:00", updated: "2026-08-18 09:00",
+  },
+  {
+    id: "VEH-010", plateNumber: "1ขก 8844", vehicleClass: "4-Wheel Truck", brand: "Isuzu", model: "D-Max Spark",
+    year: 2024, capacityKg: 1500, homeDepot: "Nonthaburi", status: "Available", financed: true,
+    registrationExpiry: "2027-10-20", insuranceExpiry: "2027-04-15", voluntaryInsuranceExpiry: "2027-04-15",
+    taxStickerExpiry: "2027-10-20", lastInspection: "2026-08-08", odometerKm: 9800,
+    statusHistory: [{ status: "Available", at: "2026-08-19 09:00", note: "Ready for assignment demo" }],
+    maintenanceLog: [],
+    created: "2024-10-20 10:00", updated: "2026-08-19 09:00",
+  },
 ];

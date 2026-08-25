@@ -74,6 +74,20 @@ export const mockQuotations: Quotation[] = [
     status: "Issued", issuedAt: "2026-08-19 16:45", created: "2026-08-19 16:45", updated: "2026-08-19 16:45",
   },
   {
+    id: "QT-2026-0016", version: 1, bookingId: "BK-2026-0022", clientId: "CLI-001",
+    lineItems: [{ description: "Van — regional parcel sorting support (7 days)", vehicleClass: "Van", quantity: 2, unit: "vehicle (7-day period)", unitPrice: 16800, amount: 33600 }],
+    discount: 1000, vatRate: 0.07, remarks: "Includes dedicated drivers for both vans. Fuel excluded.",
+    paymentTerms: "Net 30 from invoice date.", validUntil: "2026-08-29",
+    status: "Accepted", issuedAt: "2026-08-22 10:00", created: "2026-08-22 10:00", updated: "2026-08-23 11:30",
+  },
+  {
+    id: "QT-2026-0017", version: 1, bookingId: "BK-2026-0023", clientId: "CLI-002",
+    lineItems: [{ description: "Pickup — east Bangkok transfer routes (15 days)", vehicleClass: "Pickup", quantity: 1, unit: "vehicle (15-day period)", unitPrice: 24500, amount: 24500 }],
+    discount: 0, vatRate: 0.07, remarks: "Dedicated vehicle and driver. Fuel excluded.",
+    paymentTerms: "Net 30 from invoice date.", validUntil: "2026-08-28",
+    status: "Accepted", issuedAt: "2026-08-21 09:30", created: "2026-08-21 09:30", updated: "2026-08-22 15:15",
+  },
+  {
     id: "QT-2026-0002", version: 1, bookingId: "BK-2026-0003", clientId: "CLI-001",
     lineItems: [{ description: "4-Wheel truck — September peak capacity (28 days)", vehicleClass: "4-Wheel Truck", quantity: 1, unit: "vehicle (28-day period)", unitPrice: 64400, amount: 64400 }],
     discount: 2000, vatRate: 0.07, remarks: "Includes fuel card for FleetCo-managed refuelling.",

@@ -3,11 +3,11 @@
 // assignment engine (reached from All Rentals) has to see that immediately.
 import { useEffect, useState } from "react";
 import { mockDrivers, type Driver } from "@/app/data/drivers";
-import { loadPersisted, savePersisted, subscribePersisted } from "@/app/lib/persistence";
+import { loadPersisted, mergeSeedRecords, savePersisted, subscribePersisted } from "@/app/lib/persistence";
 
 type Listener = () => void;
 
-let drivers: Driver[] = loadPersisted("drivers", [...mockDrivers]);
+let drivers: Driver[] = mergeSeedRecords(loadPersisted("drivers", [...mockDrivers]), mockDrivers);
 const listeners = new Set<Listener>();
 
 function notify() {

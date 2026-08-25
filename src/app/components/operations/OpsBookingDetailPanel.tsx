@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { Check, Truck, AlertTriangle, FileCheck2, Ban, Hash, Calendar, MapPin, Repeat } from "lucide-react";
+import { Check, Truck, AlertTriangle, FileCheck2, Ban, Hash, Calendar, MapPin, Pencil } from "lucide-react";
 import {
-  type Booking, type VehicleDriverAssignment, bookingInvoices, bookingQuotations, bookingStatusLabel, bookingTaxInvoices, invoiceEligible, REQUEST_STATUSES,
+  type Booking, type VehicleDriverAssignment, bookingInvoices, bookingQuotations, fleetCoBookingStatusLabel, bookingTaxInvoices, invoiceEligible, REQUEST_STATUSES,
 } from "@/app/data/bookings";
 import type { ClientAccount } from "@/app/data/clients";
 import type { Vehicle, VehicleClass } from "@/app/data/vehicles";
@@ -123,14 +123,14 @@ function HeaderAction({
 // payment claim) — visibly lighter than HeaderAction so the primary path
 // still reads as the default one click away.
 function HeaderSecondaryAction({
-  onClick, icon: Icon, children,
-}: { onClick: () => void; icon: React.ComponentType<{ size?: number }>; children: React.ReactNode }) {
+  onClick, icon: Icon, children, compact = false,
+}: { onClick: () => void; icon: React.ComponentType<{ size?: number }>; children: React.ReactNode; compact?: boolean }) {
   return (
     <button
       onClick={onClick}
-      className="flex items-center gap-1.5 h-7 px-2.5 border border-slate-200 text-slate-600 rounded-lg text-[11px] font-medium hover:bg-slate-50 cursor-pointer shrink-0"
+      className={`flex items-center gap-1.5 border border-slate-200 text-slate-600 rounded-lg text-xs font-medium hover:bg-slate-50 cursor-pointer shrink-0 ${compact ? "h-7 px-2.5" : "h-8 px-3"}`}
     >
-      <Icon size={11} /> {children}
+      <Icon size={13} /> {children}
     </button>
   );
 }
@@ -273,10 +273,18 @@ function AssignmentForm({
     }));
   });
 
-  const candidateVehicles = vehicles.filter((v) => v.vehicleClass === booking.vehicleClassRequested);
-  const vehicleConflicts = new Map(candidateVehicles.map((v) => [v.id, getVehicleConflicts(v, booking, allBookings)]));
+  const matchingVehicles = vehicles.filter((v) => v.vehicleClass === booking.vehicleClassRequested);
+  const vehicleConflicts = new Map(matchingVehicles.map((v) => [v.id, getVehicleConflicts(v, booking, allBookings)]));
   const driverConflicts = new Map(
     drivers.map((d) => [d.id, getDriverConflicts(d, booking, allBookings, booking.vehicleClassRequested)]),
+  );
+  // Keep successful demo choices immediately visible while retaining blocked
+  // options underneath so conflict detection can still be demonstrated.
+  const candidateVehicles = [...matchingVehicles].sort(
+    (a, b) => (vehicleConflicts.get(a.id)?.length ?? 0) - (vehicleConflicts.get(b.id)?.length ?? 0),
+  );
+  const candidateDrivers = [...drivers].sort(
+    (a, b) => (driverConflicts.get(a.id)?.length ?? 0) - (driverConflicts.get(b.id)?.length ?? 0),
   );
 
   function setPick(index: number, patch: Partial<UnitPick>) {
@@ -317,7 +325,7 @@ function AssignmentForm({
             <div>
               <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Driver</h4>
               <DriverPickerList
-                candidates={drivers}
+                candidates={candidateDrivers}
                 conflictsMap={driverConflicts}
                 selectedId={pick.driverId}
                 pickedElsewhere={driversElsewhere}
@@ -383,6 +391,36 @@ export function OpsBookingDetailPanel({
   const latestInvoice = invoicesForBooking[0];
   const latestInvoiceHasTaxInvoice = !!latestInvoice && taxInvoicesForBooking.some((t) => t.invoiceId === latestInvoice.id);
   const hasExistingAssignment = (booking.assignments?.length ?? 0) > 0;
+  const availableVehicleCount = vehicles.filter(
+    (vehicle) =>
+      vehicle.vehicleClass === booking.vehicleClassRequested &&
+      getVehicleConflicts(vehicle, booking, allBookings).length === 0,
+  ).length;
+  const availableDriverCount = drivers.filter(
+    (driver) => getDriverConflicts(driver, booking, allBookings, booking.vehicleClassRequested).length === 0,
+  ).length;
+  const hasAssignmentCapacity =
+    availableVehicleCount >= booking.quantity && availableDriverCount >= booking.quantity;
+  const requestedVehicleLabel =
+    booking.quantity === 1 ? booking.vehicleClassRequested : `${booking.vehicleClassRequested}s`;
+
+  function resourceAvailabilityBanner(stage: "request" | "assignment") {
+    const availableSummary = `${availableVehicleCount} of ${booking.quantity} ${requestedVehicleLabel} and ${availableDriverCount} compatible driver${availableDriverCount === 1 ? "" : "s"}`;
+    if (hasAssignmentCapacity) {
+      return (
+        <InfoBanner tone="emerald">
+          <span className="font-semibold">Resources available — </span>
+          {availableSummary} are available for these dates. {stage === "request" ? "Capacity can be confirmed before issuing the quotation." : "This rental is ready for vehicle and driver assignment."}
+        </InfoBanner>
+      );
+    }
+    return (
+      <InfoBanner tone="amber">
+        <span className="font-semibold">Resource shortage — </span>
+        only {availableSummary} are available for these dates. {stage === "request" ? "Review fleet capacity before issuing the quotation." : "Resolve the shortage or date conflicts before assignment."}
+      </InfoBanner>
+    );
+  }
 
   function handleAssign(assignments: VehicleDriverAssignment[]) {
     // assignedAt is separate from updated (which every later transition also
@@ -436,19 +474,20 @@ export function OpsBookingDetailPanel({
     case "Requested":
       rentalPrimary = <HeaderAction icon={FileCheck2} onClick={() => navigate(`/ops/bookings/${booking.id}/quotation/new`)}>Create Quotation</HeaderAction>;
       rentalSecondary = <HeaderSecondaryAction icon={Ban} onClick={() => setShowReject(true)}>Reject Request</HeaderSecondaryAction>;
+      rentalInfo = resourceAvailabilityBanner("request");
       break;
     case "Quoted":
       rentalInfo = <InfoBanner tone="sky">Waiting on {client?.name ?? "the client"} to accept or decline the quotation.</InfoBanner>;
       break;
     case "Accepted":
       rentalPrimary = <HeaderAction icon={Truck} onClick={() => setShowAssign(true)}>Assign Vehicle &amp; Driver</HeaderAction>;
+      rentalInfo = resourceAvailabilityBanner("assignment");
       break;
     case "Assigned":
-      rentalPrimary = <HeaderAction icon={Check} onClick={() => updateBooking(booking.id, { status: "Active", updated: nowStamp() })}>Start Rental</HeaderAction>;
-      rentalSecondary = <HeaderSecondaryAction icon={Truck} onClick={() => setShowAssign(true)}>Reassign</HeaderSecondaryAction>;
+      rentalPrimary = <HeaderAction icon={Check} onClick={() => updateBooking(booking.id, { status: "Active", updated: nowStamp() })}>Start Rental (Demo)</HeaderAction>;
       break;
     case "Active":
-      rentalPrimary = <HeaderAction icon={Check} onClick={() => updateBooking(booking.id, { status: "Completed", updated: nowStamp() })}>Mark Completed</HeaderAction>;
+      rentalPrimary = <HeaderAction icon={Check} onClick={() => updateBooking(booking.id, { status: "Completed", updated: nowStamp() })}>Complete Rental (Demo)</HeaderAction>;
       break;
     default:
       break;
@@ -527,12 +566,12 @@ export function OpsBookingDetailPanel({
   // ClientBookingDetail.tsx's own declineReason handling, same tone map
   // (orange for Rejected, rose for Declined, slate for Cancelled) pulled
   // from StatusBadge's own colors so the banner agrees with the badge in
-  // the header above it — just sourced from bookingStatusLabel (ops's own
+  // the header above it — just sourced from fleetCoBookingStatusLabel (ops's own
   // Rejected/Declined split) instead of the client-facing label, which
   // reduces to the exact same three values for these terminal statuses.
   let declineArea: React.ReactNode = null;
   if (booking.declineReason) {
-    const declineLabel = bookingStatusLabel(booking);
+    const declineLabel = fleetCoBookingStatusLabel(booking);
     const tone =
       declineLabel === "Cancelled" ? "bg-slate-50 border-slate-100 text-slate-500"
       : declineLabel === "Rejected" ? "bg-orange-50 border-orange-100 text-orange-700"
@@ -552,6 +591,10 @@ export function OpsBookingDetailPanel({
   // InvoiceProgress steppers once this panel dropped those (see file header
   // comment) rather than nothing at all.
   const timeline = buildRentalTimeline(booking, quotationsForBooking);
+  const hasDocuments = quotationsForBooking.length > 0 || invoicesForBooking.length > 0 || taxInvoicesForBooking.length > 0;
+  const hasIssueReports = SHOW_ISSUE_REPORTS && issues.length > 0;
+  const showAssignmentCard = !REQUEST_STATUSES.includes(booking.status);
+  const hasSidebarContent = hasDocuments || showAssignmentCard || hasIssueReports;
 
   return (
     <>
@@ -568,7 +611,7 @@ export function OpsBookingDetailPanel({
           <div>
             <div className="flex items-center gap-3 flex-wrap">
               <h1 className="text-lg font-semibold text-slate-900">{booking.id}</h1>
-              <StatusBadge status={bookingStatusLabel(booking)} />
+              <StatusBadge status={fleetCoBookingStatusLabel(booking)} />
             </div>
             <p className="text-xs text-slate-500 mt-1">
               For {client?.name ?? booking.clientId} · Requested by {booking.requestedByName} · {formatDate(booking.created)}
@@ -605,19 +648,18 @@ export function OpsBookingDetailPanel({
           </div>
         )}
 
-        {/* Same 3:2 two-column split as ClientBookingDetail.tsx, same
-            lg:grid-cols-5 breakpoint — Rental Details + Assigned Vehicle &
-            Driver on the wide left, Documents + Issue Reports on the
-            narrow right, matching that file's own Rental Details+
-            Assignment / Documents & Billing+Issue Reports+Timeline split. */}
+        {/* Match the client detail composition: the rental timeline belongs
+            to Rental Details. Keep the 3:2 split only when there is real
+            sidebar content; a new request without documents or issues uses
+            the full width instead of leaving an empty right rail. */}
         <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
-          <div className="lg:col-span-3 space-y-5">
+          <div className={`${hasSidebarContent ? "lg:col-span-3" : "lg:col-span-5"} space-y-5`}>
             <div className="bg-white rounded-xl border border-slate-200 p-5">
               <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Rental Details</h4>
               {/* Rental Type folded into Rental Period's own value line
                   ("dates · type"), same as ClientBookingDetail.tsx — one
                   label instead of a separate tile next to it. */}
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              <div className={`grid grid-cols-1 sm:grid-cols-2 gap-3 ${hasSidebarContent ? "" : "lg:grid-cols-4"}`}>
                 <StatTile
                   icon={Calendar}
                   label="Rental Period"
@@ -631,7 +673,6 @@ export function OpsBookingDetailPanel({
                 <StatTile icon={Truck} label="Vehicle Class" value={booking.vehicleClassRequested} />
                 <StatTile icon={Hash} label="Quantity" value={String(booking.quantity)} />
                 <StatTile icon={MapPin} label="Branch Location" value={booking.pickupLocation} />
-                <StatTile icon={Repeat} label="Recurring Billing" value={booking.isRecurringBilling ? "Yes — monthly" : "No"} />
               </div>
               {booking.jobNotes && (
                 <div className="mt-4 pt-4 border-t border-slate-100">
@@ -639,19 +680,34 @@ export function OpsBookingDetailPanel({
                   <p className="text-xs text-slate-700 leading-relaxed">{booking.jobNotes}</p>
                 </div>
               )}
+              <div className="mt-4 pt-4 border-t border-slate-100">
+                <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Rental Timeline</h4>
+                <RentalTimeline entries={timeline} />
+              </div>
             </div>
 
-            {/* Gated on the booking having left Requested/Quoted (i.e. the
-                client has nothing left to decide — REQUEST_STATUSES, same
-                boundary ClientBookingDetail.tsx gates its own mirrored card
-                on), not on an assignment actually existing yet — same fix
-                as that file's own: without this an Accepted-but-unassigned
-                booking would just silently skip this card instead of
-                showing "not yet assigned," which reads as this page being
-                broken rather than as the expected pending state it is. */}
-            {!REQUEST_STATUSES.includes(booking.status) && (
+          </div>
+
+          {hasSidebarContent && (
+          <div className="lg:col-span-2 space-y-5">
+            {hasDocuments && (
               <div className="bg-white rounded-xl border border-slate-200 p-5">
-                <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Assigned Vehicle & Driver</h4>
+                <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Documents</h4>
+                <DocumentChain quotations={quotationsForBooking} invoices={invoicesForBooking} taxInvoices={taxInvoicesForBooking} onOpenTaxInvoice={openTaxInvoice} />
+              </div>
+            )}
+
+            {/* Once the client has accepted, assignment becomes supporting
+                operational context beside the primary rental details. Keep
+                the pending state visible even before a pair is selected. */}
+            {showAssignmentCard && (
+              <div className="bg-white rounded-xl border border-slate-200 p-5">
+                <div className="flex items-center justify-between gap-3 mb-3">
+                  <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Assigned Vehicle & Driver</h4>
+                  {booking.status === "Assigned" && hasExistingAssignment && (
+                    <HeaderSecondaryAction compact icon={Pencil} onClick={() => setShowAssign(true)}>Edit Assignment</HeaderSecondaryAction>
+                  )}
+                </div>
                 {assignmentUnits.length > 0 ? (
                   <div className="space-y-3">
                     {assignmentUnits.map((rows, i) => (
@@ -670,17 +726,8 @@ export function OpsBookingDetailPanel({
                 )}
               </div>
             )}
-          </div>
 
-          <div className="lg:col-span-2 space-y-5">
-            {(quotationsForBooking.length > 0 || invoicesForBooking.length > 0 || taxInvoicesForBooking.length > 0) && (
-              <div className="bg-white rounded-xl border border-slate-200 p-5">
-                <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Documents</h4>
-                <DocumentChain quotations={quotationsForBooking} invoices={invoicesForBooking} taxInvoices={taxInvoicesForBooking} onOpenTaxInvoice={openTaxInvoice} />
-              </div>
-            )}
-
-            {SHOW_ISSUE_REPORTS && issues.length > 0 && (
+            {hasIssueReports && (
               <div className="bg-white rounded-xl border border-slate-200 p-5">
                 <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Issue Reports</h4>
                 <div className="space-y-2">
@@ -732,13 +779,8 @@ export function OpsBookingDetailPanel({
               </div>
             )}
 
-            <div className="bg-white rounded-xl border border-slate-200 p-5">
-              <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Rental Timeline</h4>
-              <div className="bg-slate-50 rounded-xl p-4">
-                <RentalTimeline entries={timeline} />
-              </div>
-            </div>
           </div>
+          )}
         </div>
       </div>
 

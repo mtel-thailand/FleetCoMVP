@@ -57,14 +57,14 @@ function matchesRequestView(booking: Booking, view: RequestView) {
 }
 
 const BK_HEADERS = [
-  "ID", "Client", "Requested By", "Rental Type", "Vehicle Class", "Quantity",
+  "ID", "Client", "Rental Type", "Vehicle Class", "Quantity",
   "Start Date", "End Date", "Branch Location", "Quotation", "Status",
 ];
 
 function bkCSVRow(b: Booking, clientById: Map<string, ClientAccount>, quotations: Quotation[]): string[] {
   const quotation = b.quotationId ? quotations.find((q) => q.id === b.quotationId) : undefined;
   return [
-    b.id, clientById.get(b.clientId)?.name ?? b.clientId, b.requestedByName, b.rentalType,
+    b.id, clientById.get(b.clientId)?.name ?? b.clientId, b.rentalType,
     b.vehicleClassRequested, String(b.quantity), formatDate(b.startDate), formatDate(b.endDate),
     b.pickupLocation, quotation?.id ?? "", bookingStatusLabel(b),
   ];
@@ -73,7 +73,7 @@ function bkCSVRow(b: Booking, clientById: Map<string, ClientAccount>, quotations
 function bkXLSXRow(b: Booking, clientById: Map<string, ClientAccount>, quotations: Quotation[]): (string | number | Date | null)[] {
   const quotation = b.quotationId ? quotations.find((q) => q.id === b.quotationId) : undefined;
   return [
-    b.id, clientById.get(b.clientId)?.name ?? b.clientId, b.requestedByName, b.rentalType,
+    b.id, clientById.get(b.clientId)?.name ?? b.clientId, b.rentalType,
     b.vehicleClassRequested, b.quantity, parseExcelDate(b.startDate) as Date | string, parseExcelDate(b.endDate) as Date | string,
     b.pickupLocation, quotation?.id ?? "", bookingStatusLabel(b),
   ];
@@ -95,7 +95,6 @@ export function AllRequests() {
   // attention rather than the full, undifferentiated list.
   const [view, setView] = usePersistentListState<RequestView>("opsRequests.view", "needsQuotation");
   const [typeFilter, setTypeFilter] = usePersistentListState("opsRequests.type", "");
-  const [statusFilter, setStatusFilter] = usePersistentListState("opsRequests.status", "");
   const [sortKey, setSortKey] = usePersistentListState<SortKey>("opsRequests.sortKey", "created");
   const [sortDir, setSortDir] = usePersistentListState<SortDir>("opsRequests.sortDir", "desc");
   // Page position isn't persisted, unlike the filters above — it's a
@@ -129,12 +128,10 @@ export function AllRequests() {
     const matchSearch =
       !q ||
       b.id.toLowerCase().includes(q) ||
-      b.requestedByName.toLowerCase().includes(q) ||
       (clientById.get(b.clientId)?.name.toLowerCase().includes(q) ?? false);
     const matchView = matchesRequestView(b, view);
-    const matchStatus = !statusFilter || b.status === statusFilter;
     const matchType = !typeFilter || b.rentalType === typeFilter;
-    return matchSearch && matchView && matchStatus && matchType;
+    return matchSearch && matchView && matchType;
   });
 
   const sorted =
@@ -150,7 +147,7 @@ export function AllRequests() {
 
       <FilterBar
         showSearch
-        searchableFields={["ID", "Client", "Requested By"]}
+        searchableFields={["ID", "Client"]}
         showPeriod
         showExport
         exportDisabled={sorted.length === 0}
@@ -166,25 +163,19 @@ export function AllRequests() {
               placeholder="All Rental Types"
               options={[{ label: "All Rental Types", value: "" }, ...RENTAL_TYPES.map((t) => ({ label: t, value: t }))]}
             />
-            <FilterDropdown
-              value={statusFilter}
-              onChange={(value) => { setStatusFilter(value); setPage(1); }}
-              placeholder="All Statuses"
-              options={[{ label: "All Statuses", value: "" }, ...REQUEST_STATUSES.map((s) => ({ label: s, value: s }))]}
-            />
           </>
         }
       />
 
       <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
         <div className="overflow-x-auto relative">
-          <table className="w-full table-fixed text-sm" style={{ minWidth: "1380px" }}>
+          <table className="w-full table-fixed text-sm" style={{ minWidth: "1320px" }}>
             <colgroup>
               <col style={{ width: "110px" }} />
               <col style={{ width: "170px" }} />
-              <col style={{ width: "130px" }} />
               <col style={{ width: "110px" }} />
               <col style={{ width: "150px" }} />
+              <col style={{ width: "70px" }} />
               <col style={{ width: "100px" }} />
               <col style={{ width: "100px" }} />
               <col style={{ width: "160px" }} />
@@ -193,11 +184,12 @@ export function AllRequests() {
             </colgroup>
             <thead>
               <tr className="border-b border-slate-100 bg-slate-50">
-                {["ID", "Client", "Requested By"].map((h) => (
+                {["ID", "Client"].map((h) => (
                   <th key={h} className="text-left text-xs font-medium text-slate-400 px-4 py-2.5 whitespace-nowrap">{h}</th>
                 ))}
                 <th className="text-left text-xs font-medium text-slate-400 px-4 py-2.5 whitespace-nowrap">Rental Type</th>
-                <th className="text-left text-xs font-medium text-slate-400 px-4 py-2.5 whitespace-nowrap">Vehicle / Qty</th>
+                <th className="text-left text-xs font-medium text-slate-400 px-4 py-2.5 whitespace-nowrap">Vehicle Class</th>
+                <th className="text-left text-xs font-medium text-slate-400 px-4 py-2.5 whitespace-nowrap">Qty</th>
                 <th
                   className="text-left text-xs font-medium text-slate-400 px-4 py-2.5 whitespace-nowrap cursor-pointer select-none hover:text-slate-600"
                   onClick={() => handleSort("startDate")}
@@ -222,9 +214,9 @@ export function AllRequests() {
                   <tr key={b.id} className="border-b border-slate-50 hover:bg-slate-50 cursor-pointer" onClick={() => navigate(`/ops/bookings/${b.id}`)}>
                     <td className="px-4 py-3 text-xs text-[var(--portal-accent)] font-medium whitespace-nowrap">{b.id}</td>
                     <td className="px-4 py-3 text-xs text-slate-700 truncate">{clientById.get(b.clientId)?.name ?? b.clientId}</td>
-                    <td className="px-4 py-3 text-xs text-slate-700 truncate">{b.requestedByName}</td>
                     <td className="px-4 py-3 text-xs text-slate-600 whitespace-nowrap">{b.rentalType}</td>
-                    <td className="px-4 py-3 text-xs text-slate-600 whitespace-nowrap">{b.vehicleClassRequested} × {b.quantity}</td>
+                    <td className="px-4 py-3 text-xs text-slate-600 whitespace-nowrap">{b.vehicleClassRequested}</td>
+                    <td className="px-4 py-3 text-xs text-slate-600 whitespace-nowrap">{b.quantity}</td>
                     <td className="px-4 py-3 text-xs text-slate-600 whitespace-nowrap">{formatDate(b.startDate)}</td>
                     <td className="px-4 py-3 text-xs text-slate-600 whitespace-nowrap">{formatDate(b.endDate)}</td>
                     <td className="px-4 py-3 text-xs text-slate-600 truncate">{b.pickupLocation}</td>

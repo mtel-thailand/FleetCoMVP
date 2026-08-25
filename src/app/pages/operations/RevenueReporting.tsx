@@ -8,6 +8,7 @@ import type { Vehicle } from "@/app/data/vehicles";
 import { formatCurrency } from "@/app/data/formatters";
 import { formatDate } from "@/app/components/ui/utils";
 import { exportCSV, exportXLSX, exportDateTag } from "@/app/components/ui/exportUtils";
+import { SHOW_EXPORTS } from "@/app/lib/featureFlags";
 
 // brief §4.7 — the other big gap the audit flagged. "Revenue by
 // client/vehicle/type/rental-type; monthly trend; committed future revenue
@@ -72,7 +73,7 @@ function CardHeader({ title, onExport }: { title: string; onExport?: () => void 
   return (
     <div className="flex items-center justify-between mb-4">
       <h3 className="text-sm font-semibold text-slate-900">{title}</h3>
-      {onExport && (
+      {SHOW_EXPORTS && onExport && (
         <button onClick={onExport} className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-800 cursor-pointer">
           <Download size={12} /> Export
         </button>
@@ -313,12 +314,14 @@ export function RevenueReporting() {
         )}
       </div>
 
-      <button
-        onClick={() => window.print()}
-        className="text-xs text-slate-500 hover:text-slate-800 flex items-center gap-1.5 cursor-pointer print:hidden"
-      >
-        <Download size={12} /> Print / Export Full Summary as PDF
-      </button>
+      {SHOW_EXPORTS && (
+        <button
+          onClick={() => window.print()}
+          className="text-xs text-slate-500 hover:text-slate-800 flex items-center gap-1.5 cursor-pointer print:hidden"
+        >
+          <Download size={12} /> Print / Export Full Summary as PDF
+        </button>
+      )}
     </div>
   );
 }

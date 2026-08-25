@@ -4,7 +4,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useBookings } from "@/app/lib/bookingsStore";
 import { useVehicles } from "@/app/lib/vehiclesStore";
 import type { VehicleClass } from "@/app/data/vehicles";
-import type { Booking } from "@/app/data/bookings";
+import { fleetCoRentalStatusLabel, type Booking } from "@/app/data/bookings";
 import type { BookingStatus } from "@/app/data/bookingStatus";
 import { FilterDropdown } from "@/app/components/ui/FilterDropdown";
 
@@ -131,7 +131,7 @@ export function FleetCalendar() {
         {(["Assigned", "Active", "Completed"] as const).map((s) => (
           <span key={s} className="flex items-center gap-1.5">
             <span className={`w-2.5 h-2.5 rounded-sm ${BAR_COLOR[s]}`} />
-            {s}
+            {fleetCoRentalStatusLabel(s)}
           </span>
         ))}
       </div>
@@ -199,7 +199,7 @@ export function FleetCalendar() {
                         <button
                           key={b.id}
                           onClick={() => openBooking(b.id)}
-                          title={`${b.id} · ${b.status} · ${b.startDate} → ${b.endDate}`}
+                          title={`${b.id} · ${fleetCoRentalStatusLabel(b.status)} · ${b.startDate} → ${b.endDate}`}
                           className={`absolute top-1/2 -translate-y-1/2 h-6 rounded-md ${BAR_COLOR[b.status]} text-white text-[10px] font-medium flex items-center px-1.5 overflow-hidden hover:opacity-90 cursor-pointer transition-opacity`}
                           style={{ left, width: Math.max(width - 2, 4) }}
                         >

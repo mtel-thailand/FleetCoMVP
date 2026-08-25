@@ -16,7 +16,7 @@ import {
   Wallet,
   Wrench,
 } from "lucide-react";
-import { bookingInvoices, bookingStatusLabel, type Booking } from "@/app/data/bookings";
+import { bookingInvoices, fleetCoBookingStatusLabel, type Booking } from "@/app/data/bookings";
 import { formatCurrency } from "@/app/data/formatters";
 import type { Invoice } from "@/app/data/invoices";
 import type { TaxInvoice } from "@/app/data/taxInvoices";
@@ -27,6 +27,7 @@ import { useClients } from "@/app/lib/clientsStore";
 import { useInvoices } from "@/app/lib/invoicesStore";
 import { useTaxInvoices } from "@/app/lib/taxInvoicesStore";
 import { useVehicles } from "@/app/lib/vehiclesStore";
+import { daysFromToday, fleetCoNextAction, invoiceHasTaxInvoice, relativeDateLabel } from "@/app/lib/fleetCoActions";
 
 type WorkLane = "all" | "operations" | "commercial" | "finance";
 type WorkPriority = "urgent" | "high" | "normal";
@@ -50,42 +51,6 @@ const PRIORITY_STYLES: Record<WorkPriority, string> = {
 
 const PRIORITY_ORDER: Record<WorkPriority, number> = { urgent: 0, high: 1, normal: 2 };
 const RENTAL_ENDING_SOON_DAYS = 7;
-
-function daysFromToday(date: string, today: string) {
-  const target = new Date(`${date}T00:00:00`).getTime();
-  const base = new Date(`${today}T00:00:00`).getTime();
-  return Math.ceil((target - base) / 86_400_000);
-}
-
-function relativeDateLabel(date: string, today: string, verb: "Starts" | "Ends") {
-  const days = daysFromToday(date, today);
-  if (days === 0) return `${verb} today`;
-  if (days === 1) return `${verb} tomorrow`;
-  if (days > 1) return `${verb} in ${days} days`;
-  return `${verb} ${Math.abs(days)} day${Math.abs(days) === 1 ? "" : "s"} ago`;
-}
-
-function invoiceHasTaxInvoice(invoice: Invoice, taxInvoices: TaxInvoice[]) {
-  return taxInvoices.some((taxInvoice) => taxInvoice.invoiceId === invoice.id);
-}
-
-function nextActionFor(booking: Booking, invoices: Invoice[], taxInvoices: TaxInvoice[], today: string) {
-  const latestInvoice = bookingInvoices(booking.id, invoices)[0];
-
-  if (latestInvoice?.status === "Payment Submitted") return "Verify submitted payment";
-  if (latestInvoice?.status === "Paid" && !invoiceHasTaxInvoice(latestInvoice, taxInvoices)) return "Issue tax invoice";
-  if (latestInvoice?.status === "Overdue") return "Follow up overdue payment";
-  if (latestInvoice?.status === "Payment Issue") return "Await corrected payment claim";
-  if (latestInvoice?.status === "Unpaid") return "Await client payment";
-
-  if (booking.status === "Requested") return "Prepare quotation";
-  if (booking.status === "Quoted") return "Await client decision";
-  if (booking.status === "Accepted") return "Assign vehicle & driver";
-  if (booking.status === "Assigned") return relativeDateLabel(booking.startDate, today, "Starts");
-  if (booking.status === "Active") return relativeDateLabel(booking.endDate, today, "Ends");
-  if (booking.status === "Completed") return "Prepare final invoice";
-  return "No immediate action";
-}
 
 function SummaryMetric({
   icon,
@@ -446,10 +411,10 @@ export function OperationsDashboard() {
                       <td className="px-4 py-3 text-slate-600">{clientById.get(booking.clientId)?.name ?? booking.clientId}</td>
                       <td className="px-4 py-3 text-slate-600">{booking.quantity}× {booking.vehicleClassRequested}</td>
                       <td className="whitespace-nowrap px-4 py-3 text-slate-600">{formatDate(booking.startDate)} – {formatDate(booking.endDate)}</td>
-                      <td className="px-4 py-3 font-medium text-slate-700">{nextActionFor(booking, invoices, taxInvoices, today)}</td>
+                      <td className="px-4 py-3 font-medium text-slate-700">{fleetCoNextAction(booking, invoices, taxInvoices, today)}</td>
                       <td className="px-4 py-3">
                         <div className="flex flex-wrap items-center gap-1.5">
-                          <StatusBadge status={bookingStatusLabel(booking)} />
+                          <StatusBadge status={fleetCoBookingStatusLabel(booking)} />
                           {latestInvoice && <StatusBadge status={latestInvoice.status} />}
                         </div>
                       </td>
