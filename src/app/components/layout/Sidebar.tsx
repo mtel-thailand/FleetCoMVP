@@ -16,7 +16,6 @@ import {
   Landmark,
   Calculator,
   Shield,
-  Bell,
   ScrollText,
   ClipboardList,
   Wallet,
@@ -143,7 +142,6 @@ export const OPS_NAV_SECTIONS: NavSection[] = [
     icon: <Shield size={16} />,
     items: [
       { label: "Roles & Permissions", path: "/ops/admin/roles",         icon: <Shield size={16} />, soon: true },
-      { label: "Notifications",       path: "/ops/admin/notifications", icon: <Bell size={16} /> },
       { label: "Audit Log",           path: "/ops/admin/audit-log",     icon: <ScrollText size={16} />, soon: true },
     ],
   },
