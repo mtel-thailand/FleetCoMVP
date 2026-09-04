@@ -1,4 +1,4 @@
-let currentPassword = "1234";
+let currentPassword = "Test2000";
 
 export function getStoredPassword(): string {
   return currentPassword;

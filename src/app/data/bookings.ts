@@ -296,7 +296,9 @@ export const mockBookings: Booking[] = rebaseDemoDates<Booking[]>([
   {
     id: "BK-2026-0001", clientId: "CLI-001", requestedByName: "Pakawat Chuenjai",
     rentalType: "Ad hoc / Daily", vehicleClassRequested: "Van", quantity: 2,
-    startDate: "2026-08-18", endDate: "2026-08-18",
+    // Two days after the demo anchor: still upcoming when the operator
+    // opens Needs Quotation, instead of asking them to quote a missed date.
+    startDate: "2026-08-27", endDate: "2026-08-27",
     pickupLocation: "Bangkok GPO, Charoen Krung Rd", jobNotes: "Overflow parcel run, north Bangkok routes.",
     status: "Requested", isRecurringBilling: false,
     created: "2026-08-14 08:10", updated: "2026-08-14 08:10",
@@ -494,11 +496,11 @@ export const mockBookings: Booking[] = rebaseDemoDates<Booking[]>([
     startDate: "2026-09-16", endDate: "2026-09-23",
     pickupLocation: "Bang Sue Distribution Center", jobNotes: "Regional overflow coverage.",
     status: "Cancelled", assignments: [{ vehicleId: "VEH-003", driverId: "DRV-003" }], quotationId: "QT-2026-0019",
-    assignedAt: "2026-08-27 11:00",
-    cancelledFromStatus: "Assigned", cancelledBy: "client", cancelledAt: "2026-08-29 14:00",
+    assignedAt: "2026-08-20 11:00",
+    cancelledFromStatus: "Assigned", cancelledBy: "client", cancelledAt: "2026-08-22 14:00",
     cancellationReason: "Delivery volume was reduced after the client consolidated routes.",
     isRecurringBilling: false,
-    created: "2026-08-24 09:15", updated: "2026-08-29 14:00",
+    created: "2026-08-17 09:15", updated: "2026-08-22 14:00",
   },
   {
     id: "BK-2026-0026", clientId: "CLI-001", requestedByName: "Suphaporn Wongsa",
@@ -506,10 +508,10 @@ export const mockBookings: Booking[] = rebaseDemoDates<Booking[]>([
     startDate: "2026-09-29", endDate: "2026-10-20",
     pickupLocation: "Chaeng Watthana", jobNotes: "Campaign support vehicle.",
     status: "Cancelled", quotationId: "QT-2026-0020",
-    cancelledFromStatus: "Accepted", cancelledBy: "client", cancelledAt: "2026-08-30 10:00",
+    cancelledFromStatus: "Accepted", cancelledBy: "client", cancelledAt: "2026-08-22 10:00",
     cancellationReason: "The campaign schedule changed and the vehicle was no longer required.",
     isRecurringBilling: false,
-    created: "2026-08-26 10:30", updated: "2026-08-30 10:00",
+    created: "2026-08-18 10:30", updated: "2026-08-22 10:00",
   },
   // quantity>1, fully assigned — each of the 2 trucks gets its own vehicle +
   // driver (VEH-001/DRV-001 and VEH-006/DRV-009), not one pair shared or
@@ -537,22 +539,20 @@ export const mockBookings: Booking[] = rebaseDemoDates<Booking[]>([
     isRecurringBilling: false,
     created: "2026-08-14 09:00", updated: "2026-08-16 09:30",
   },
-  // Short, near-term booking so there's always at least one Assigned
-  // booking whose start date has actually arrived — every other Assigned
-  // booking in this file (BK-2026-0014, BK-2026-0017) starts weeks out, so
-  // without this one there's no way to demo Start Rental actually firing
-  // without either editing dates or hitting the "started early" warning on
-  // purpose. Dates stay clear of BK-2026-0014 above (31 Aug – 4 Sept vs.
-  // 15–22 Sept) so VEH-001/DRV-001 aren't double-booked.
+  // Anchored to DEMO_REFERENCE_DATE so there is always one Assigned booking
+  // whose start date is today. This keeps the manual Start Rental action
+  // demonstrable after the entire dataset is rebased. The five-day period
+  // stays clear of BK-2026-0014 (15–22 Sept), so VEH-001/DRV-001 aren't
+  // double-booked.
   {
     id: "BK-2026-0024", clientId: "CLI-001", requestedByName: "Suphaporn Wongsa",
     rentalType: "Short term", vehicleClassRequested: "4-Wheel Truck", quantity: 1,
-    startDate: "2026-08-31", endDate: "2026-09-04",
+    startDate: "2026-08-25", endDate: "2026-08-29",
     pickupLocation: "Bang Na Distribution Hub", jobNotes: "Short relief run, city distribution.",
     status: "Assigned", assignments: [{ vehicleId: "VEH-001", driverId: "DRV-001" }], quotationId: "QT-2026-0018",
-    assignedAt: "2026-08-29 09:00",
+    assignedAt: "2026-08-24 09:00",
     isRecurringBilling: false,
-    created: "2026-08-27 09:00", updated: "2026-08-29 09:00",
+    created: "2026-08-21 09:00", updated: "2026-08-24 09:00",
   },
   // Thailand Post's own "Rejected" example — FleetCo declining a raw request
   // outright, before ever pricing it (no quotationId), as opposed to

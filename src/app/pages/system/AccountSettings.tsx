@@ -7,7 +7,8 @@ import { KeyRound, User, Eye, EyeOff } from "lucide-react";
 import { getAdminRole, getStoredPassword, setStoredPassword, ROLE_LABELS, ROLE_PORTAL } from "@/app/lib/auth";
 import { ActionModal } from "@/app/components/ui/ActionModal";
 
-const MIN_PASSWORD_LENGTH = 4;
+const MIN_PASSWORD_LENGTH = 8;
+const PASSWORD_CHARACTERS = /^[A-Za-z0-9!@#$%^&*()[\]{};:'",.?/\\|`~_+=-]+$/;
 
 // Same show/hide-on-focus password field LoginPage.tsx already uses (Eye/
 // EyeOff toggle, absolutely-positioned inside the field) — one shared shape
@@ -26,11 +27,12 @@ function PasswordField({
           autoFocus={autoFocus}
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          className="w-full border border-slate-200 rounded-lg pl-3 pr-9 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--portal-accent)]"
+          className="w-full rounded-lg border border-slate-200 pl-3 pr-9 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--portal-accent-ring)]"
         />
         <button
           type="button"
           onClick={() => setShow((v) => !v)}
+          aria-label={show ? "Hide password" : "Show password"}
           className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
         >
           {show ? <Eye size={15} /> : <EyeOff size={15} />}
@@ -49,13 +51,10 @@ function PasswordField({
 // existed in auth.ts with zero callers anywhere, clearly staged for exactly
 // this and never wired up.
 //
-// One real difference from the reference, said plainly in the copy below
-// rather than glossed over: this demo has no per-user accounts at all — one
-// shared password gates every role on both portals (LoginPage.tsx's own
-// getStoredPassword() check). Resetting it here changes what *everyone*
-// signs in with next time, not just this session's own role, so there's no
-// "my email" row to show either — there isn't one, nothing in this app's
-// data model tracks who's actually behind a given role.
+// One real difference from the reference: this demo has no per-user accounts
+// at all — one shared password gates every role on both portals
+// (LoginPage.tsx's own getStoredPassword() check). There is no email row to
+// show because the data model does not track an individual behind each role.
 
 function ResetPasswordModal({ onClose }: { onClose: () => void }) {
   const [next, setNext] = useState("");
@@ -65,27 +64,31 @@ function ResetPasswordModal({ onClose }: { onClose: () => void }) {
   // uses (canSubmit), rather than letting a bad attempt through to an error
   // message after the fact.
   const mismatch = confirm.length > 0 && next !== confirm;
-  const canConfirm = next.length >= MIN_PASSWORD_LENGTH && next === confirm;
+  const hasAllowedCharacters = next.length > 0 && PASSWORD_CHARACTERS.test(next);
+  const canConfirm = next.length >= MIN_PASSWORD_LENGTH && hasAllowedCharacters && next === confirm;
 
   function handleConfirm() {
     if (!canConfirm) return;
     setStoredPassword(next);
-    toast.success(translate("Password reset — that's what every role on both portals signs in with now."));
+    toast.success(translate("Password reset successfully."));
     onClose();
   }
 
   return (
-    <ActionModal title="Reset Password" subtitle="Shared across every role, both portals" onClose={onClose}>
+    <ActionModal title="Reset Password" onClose={onClose}>
       <div className="space-y-4">
         <div>
           <PasswordField label="New password" value={next} onChange={setNext} autoFocus />
-          <p className="text-[11px] text-slate-400 mt-1.5">
-            Must be at least {MIN_PASSWORD_LENGTH} characters.
+          <p className="mt-1.5 text-[11px] leading-relaxed text-slate-400">
+            Must be at least {MIN_PASSWORD_LENGTH} characters using letters (A–Z, a–z), numbers (0–9), or symbols.
           </p>
+          {next.length > 0 && !hasAllowedCharacters && (
+            <p className="mt-1.5 text-xs text-rose-600">Use only letters, numbers, or symbols.</p>
+          )}
         </div>
         <div>
           <PasswordField label="Confirm new password" value={confirm} onChange={setConfirm} />
-          {mismatch && <p className="text-xs text-red-500 mt-1.5">Passwords don't match.</p>}
+          {mismatch && <p className="mt-1.5 text-xs text-rose-600">Passwords don&apos;t match.</p>}
         </div>
         <div className="flex gap-2 pt-1">
           <Button variant="outline" size="md" className="flex-1 px-0 py-2" onClick={onClose}>
@@ -114,9 +117,9 @@ export function AccountSettings() {
 
   return (
     <div>
-      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-        <div className="flex items-center gap-3 px-5 py-4">
-          <div className="w-11 h-11 rounded-full bg-[var(--portal-accent)] flex items-center justify-center text-white shrink-0">
+      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+        <div className="flex items-center gap-3 border-b border-slate-200 bg-slate-50 px-5 py-4">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[var(--portal-accent)] text-white">
             <User size={18} strokeWidth={2.5} />
           </div>
           <div>
@@ -125,25 +128,20 @@ export function AccountSettings() {
           </div>
         </div>
 
-        <div className="border-t border-slate-100 px-5 py-4">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-3">Security</p>
+        <div className="px-5 py-4">
+          <p className="mb-3 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Security</p>
           <div className="flex items-center justify-between gap-4">
             <div>
-              <p className="text-xs text-slate-500 mb-1.5">Password</p>
-              <p className="text-slate-800 tracking-widest">{dots}</p>
+              <p className="mb-1.5 text-xs text-slate-500">Password</p>
+              <p className="tracking-widest text-slate-600">{dots}</p>
             </div>
             <button
               onClick={() => setShowReset(true)}
-              className="flex items-center gap-1.5 h-8 px-3 bg-[var(--portal-accent-light)] text-[var(--portal-accent)] rounded-lg text-xs font-medium hover:opacity-80 cursor-pointer shrink-0"
+              className="flex h-8 shrink-0 items-center gap-1.5 rounded-lg bg-[var(--portal-accent-light)] px-3 text-xs font-medium text-[var(--portal-accent)] transition-colors hover:opacity-80 cursor-pointer"
             >
               <KeyRound size={13} /> Reset Password
             </button>
           </div>
-          <p className="text-[11px] text-slate-400 mt-3 leading-relaxed">
-            Demo mode — there's no per-user account behind this: every role on both portals checks in against this one
-            shared password (see the login screen). Resetting it updates what everyone signs in with next time, not
-            just this session.
-          </p>
         </div>
       </div>
 

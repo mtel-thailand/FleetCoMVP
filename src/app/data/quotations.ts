@@ -201,8 +201,8 @@ export const mockQuotations: Quotation[] = rebaseDemoDates<Quotation[]>([
     id: "QT-2026-0018", version: 1, bookingId: "BK-2026-0024", clientId: "CLI-001",
     lineItems: [{ description: "4-Wheel truck — short relief run (5 days)", vehicleClass: "4-Wheel Truck", quantity: 1, unit: "vehicle (5-day period)", unitPrice: 9000, amount: 9000 }],
     discount: 0, vatRate: 0.07, remarks: "Includes dedicated driver. Fuel excluded.",
-    paymentTerms: "Net 30 from invoice date", validUntil: "2026-09-05",
-    status: "Accepted", issuedAt: "2026-08-27 10:00", created: "2026-08-27 10:00", updated: "2026-08-28 14:00",
+    paymentTerms: "Net 30 from invoice date", validUntil: "2026-08-31",
+    status: "Accepted", issuedAt: "2026-08-22 10:00", created: "2026-08-22 10:00", updated: "2026-08-23 14:00",
   },
   {
     // Matches BK-2026-0025 — accepted and assigned before the client
@@ -210,15 +210,15 @@ export const mockQuotations: Quotation[] = rebaseDemoDates<Quotation[]>([
     id: "QT-2026-0019", version: 1, bookingId: "BK-2026-0025", clientId: "CLI-001",
     lineItems: [{ description: "Pickup — regional overflow coverage (8 days)", vehicleClass: "Pickup", quantity: 1, unit: "vehicle (8-day period)", unitPrice: 14000, amount: 14000 }],
     discount: 0, vatRate: 0.07, remarks: "Includes dedicated driver. Fuel excluded.",
-    paymentTerms: "Net 30 from invoice date", validUntil: "2026-09-01",
-    status: "Accepted", issuedAt: "2026-08-25 10:00", created: "2026-08-25 10:00", updated: "2026-08-26 15:30",
+    paymentTerms: "Net 30 from invoice date", validUntil: "2026-08-25",
+    status: "Accepted", issuedAt: "2026-08-18 10:00", created: "2026-08-18 10:00", updated: "2026-08-19 15:30",
   },
   {
     // Matches BK-2026-0026 — accepted, then cancelled before assignment.
     id: "QT-2026-0020", version: 1, bookingId: "BK-2026-0026", clientId: "CLI-001",
     lineItems: [{ description: "Van — campaign support (22 days)", vehicleClass: "Van", quantity: 1, unit: "vehicle (22-day period)", unitPrice: 42000, amount: 42000 }],
     discount: 0, vatRate: 0.07, remarks: "Dedicated vehicle and driver. Fuel excluded.",
-    paymentTerms: "Net 30 from invoice date", validUntil: "2026-09-03",
-    status: "Accepted", issuedAt: "2026-08-27 09:30", created: "2026-08-27 09:30", updated: "2026-08-28 11:00",
+    paymentTerms: "Net 30 from invoice date", validUntil: "2026-08-26",
+    status: "Accepted", issuedAt: "2026-08-19 09:30", created: "2026-08-19 09:30", updated: "2026-08-20 11:00",
   },
 ]);

@@ -62,7 +62,7 @@ export const mockVehicles: Vehicle[] = rebaseDemoDates<Vehicle[]>([
       { status: "Reserved", at: "2026-08-14 08:45", bookingId: "BK-2026-0005", note: "Reserved for BK-2026-0005" },
       { status: "On Rental", at: "2026-08-14 09:00", bookingId: "BK-2026-0005", note: "Rental started — BK-2026-0005" },
       { status: "Available", at: "2026-08-14 18:00", bookingId: "BK-2026-0005", note: "Rental completed — BK-2026-0005" },
-      { status: "Reserved", at: "2026-08-29 09:00", bookingId: "BK-2026-0024", note: "Reserved for BK-2026-0024; BK-2026-0014 follows on 15 Sept" },
+      { status: "Reserved", at: "2026-08-24 09:00", bookingId: "BK-2026-0024", note: "Reserved for BK-2026-0024; BK-2026-0014 follows on 15 Sept 2026" },
     ],
     maintenanceLog: [
       { date: "2026-06-15", type: "Scheduled service", cost: 3200, odometerKm: 46000, note: "Oil change, brake check" },

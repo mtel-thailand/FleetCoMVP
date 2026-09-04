@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
+import { getAdminRole, ROLE_PORTAL } from "@/app/lib/auth";
 
 // The behavioural shell behind every modal in this app — layer 1, nothing else.
 //
@@ -63,6 +64,12 @@ export function Modal({
   dismissOnOutsideClick?: boolean;
   children: React.ReactNode;
 }) {
+  // Radix portals the overlay to document.body, outside Layout's
+  // data-portal wrapper. Reapply the active portal here so focus rings,
+  // accent buttons, and any other CSS-variable-driven modal UI stay aligned
+  // on the ThaiPost side as well as FleetCo.
+  const role = getAdminRole();
+  const portal = role ? ROLE_PORTAL[role] : undefined;
   // Captured in the useRef initialiser — during render, deliberately not in an
   // effect. Radix moves focus into the dialog in its own mount effect, so an
   // effect here would race it and capture the dialog's own first control
@@ -88,7 +95,11 @@ export function Modal({
             original flex centering (bottom sheet on mobile, centered card from
             sm: up) instead of switching to transform-based positioning, and it
             keeps click-outside-to-close working the way it always did. */}
-        <Dialog.Overlay className={overlayClassName} {...overlayProps}>
+        <Dialog.Overlay
+          className={overlayClassName}
+          {...(portal ? { "data-portal": portal } : {})}
+          {...overlayProps}
+        >
           <Dialog.Content
             className={contentClassName}
             // Radix warns when a dialog has no Description, and its documented

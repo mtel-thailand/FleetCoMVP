@@ -2,9 +2,8 @@ import { useNavigate } from "react-router";
 import { Wallet } from "lucide-react";
 import { usePersistentListState } from "@/app/hooks/usePersistentListState";
 import { useInvoices } from "@/app/lib/invoicesStore";
-import { useTaxInvoices } from "@/app/lib/taxInvoicesStore";
 import { useBookings } from "@/app/lib/bookingsStore";
-import type { InvoiceStatus } from "@/app/data/invoices";
+import { invoiceDisplayStatus, type InvoiceStatus } from "@/app/data/invoices";
 import { InvoiceStatusCell } from "@/app/components/ui/InvoiceProgress";
 import { EmptyState } from "@/app/components/ui/EmptyState";
 import { FilterBar } from "@/app/components/ui/FilterBar";
@@ -36,44 +35,35 @@ import { CLIENT_ID } from "@/app/lib/currentClient";
 // this one can't offer. Stacking both a booking-grouped table AND urgency
 // tabs on top of it was more structure than this list's actual size earns.
 
-type SortKey = "dueDate" | "amountDue" | "status" | "created";
+type SortKey = "dueDate" | "amountDue" | "status" | "issuedAt";
 type SortDir = "asc" | "desc";
+type InvoiceView = "needsAction" | "awaiting" | "paid" | "all";
 
 // Status column uses InvoiceStatusCell (the segmented-bar treatment, shared
 // with DocumentChain's own Invoice rows via ui/InvoiceProgress.tsx), not the
 // plain StatusBadge pill — this table went back and forth on that once
 // already (see git history/session notes if curious), landing here for
 // good this time. The table variant intentionally uses the wider treatment
-// from the billing reference and repeats the due date beside actionable
-// statuses for quick scanning.
+// from the billing reference.
 
-// The client's-turn/not-the-client's-turn split FilterTabs groups by —
-// Unpaid, Overdue, and Payment Issue are the statuses where paying (or
-// re-paying) is actually this viewer's own next move; Payment Submitted
-// and Paid both mean there's nothing further for them to do (verifying a
-// submitted payment is FleetCo's job, not theirs — see the brief quote
-// above on why "submitted" isn't "settled"). Each row's own status cell
-// still shows the precise status either way; this only ever coarsens the
-// *filter*, not what's displayed once a row is showing.
+// Tabs distinguish the client's next move from FleetCo's verification step
+// and from genuinely paid invoices. Payment Submitted must not be grouped
+// under Paid: it is still awaiting an operational decision by FleetCo.
 const NEEDS_ACTION_STATUSES: InvoiceStatus[] = ["Unpaid", "Overdue", "Payment Issue"];
-const SETTLED_STATUSES: InvoiceStatus[] = ["Payment Submitted", "Paid"];
+const STATUS_PRIORITY: InvoiceStatus[] = ["Overdue", "Payment Issue", "Unpaid", "Payment Submitted", "Paid"];
 
 export function InvoiceInbox() {
   const navigate = useNavigate();
   const invoices = useInvoices().filter((i) => i.clientId === CLIENT_ID);
   const bookings = useBookings();
   const bookingById = new Map(bookings.map((b) => [b.id, b]));
-  // Same "hangs off its Invoice" link InvoiceDetail's own header shows, one
-  // level up — the one place a tax invoice's existence is worth a glance
-  // without opening the invoice first.
-  const invoicesWithTaxInvoice = new Set(useTaxInvoices().filter((t) => t.clientId === CLIENT_ID).map((t) => t.invoiceId));
   // Persisted (sessionStorage-backed), not plain useState — this page
   // unmounts on every navigation away (clicking a row, then Back), which
   // used to silently reset the tab/search/sort back to default each time.
   // See usePersistentListState's own comment for exactly when this clears.
   const [search, setSearch] = usePersistentListState("invoiceInbox.search", "");
-  const [tabFilter, setTabFilter] = usePersistentListState("invoiceInbox.tab", "");
-  const [sortKey, setSortKey] = usePersistentListState<SortKey>("invoiceInbox.sortKey", "created");
+  const [tabFilter, setTabFilter] = usePersistentListState<InvoiceView>("invoiceInbox.tab.v2", "needsAction");
+  const [sortKey, setSortKey] = usePersistentListState<SortKey>("invoiceInbox.sortKey.v2", "issuedAt");
   const [sortDir, setSortDir] = usePersistentListState<SortDir>("invoiceInbox.sortDir", "desc");
 
   function handleSort(key: SortKey) {
@@ -91,20 +81,29 @@ export function InvoiceInbox() {
   // tabs. highlight on Needs Action mirrors ops's own "needs FleetCo
   // action" amber treatment for the tab that means "your move."
   const tabOptions = [
-    { value: "", label: "All", count: invoices.length },
-    { value: "needsAction", label: "Needs Action", count: invoices.filter((i) => NEEDS_ACTION_STATUSES.includes(i.status)).length, highlight: true },
-    { value: "settled", label: "Settled", count: invoices.filter((i) => SETTLED_STATUSES.includes(i.status)).length },
+    { value: "needsAction", label: "Needs Action", count: invoices.filter((i) => NEEDS_ACTION_STATUSES.includes(invoiceDisplayStatus(i))).length, highlight: true },
+    { value: "awaiting", label: "Awaiting Verification", count: invoices.filter((i) => i.status === "Payment Submitted").length },
+    { value: "paid", label: "Paid", count: invoices.filter((i) => i.status === "Paid").length },
+    { value: "all", label: "All", count: invoices.length },
   ];
 
   const query = search.trim().toLowerCase();
   const filtered = invoices.filter((item) => {
     const matchSearch = !query || item.id.toLowerCase().includes(query) || item.bookingId.toLowerCase().includes(query);
     const matchTab =
-      !tabFilter ||
-      (tabFilter === "needsAction" ? NEEDS_ACTION_STATUSES.includes(item.status) : SETTLED_STATUSES.includes(item.status));
+      tabFilter === "all" ||
+      (tabFilter === "needsAction" && NEEDS_ACTION_STATUSES.includes(invoiceDisplayStatus(item))) ||
+      (tabFilter === "awaiting" && item.status === "Payment Submitted") ||
+      (tabFilter === "paid" && item.status === "Paid");
     return matchSearch && matchTab;
   });
-  const sorted = sortByDatetime(filtered, sortKey, sortDir);
+  const sorted =
+    sortKey === "status" ? [...filtered].sort((a, b) => {
+      const cmp = STATUS_PRIORITY.indexOf(invoiceDisplayStatus(a)) - STATUS_PRIORITY.indexOf(invoiceDisplayStatus(b));
+      return sortDir === "asc" ? cmp : -cmp;
+    })
+    : sortKey === "amountDue" ? [...filtered].sort((a, b) => (sortDir === "asc" ? a.amountDue - b.amountDue : b.amountDue - a.amountDue))
+    : sortByDatetime(filtered, sortKey, sortDir);
 
   return (
     <div>
@@ -118,7 +117,7 @@ export function InvoiceInbox() {
         </div>
       ) : (
         <>
-          <FilterTabs options={tabOptions} value={tabFilter} onChange={setTabFilter} />
+          <FilterTabs options={tabOptions} value={tabFilter} onChange={(value) => setTabFilter(value as InvoiceView)} />
           <FilterBar
             searchableFields={["Invoice ID", "Booking ID"]}
             onSearch={setSearch}
@@ -139,12 +138,11 @@ export function InvoiceInbox() {
                       <p className="text-sm font-semibold text-[var(--portal-accent)]">{inv.id}</p>
                       <p className="mt-0.5 text-xs text-slate-500">{inv.bookingId}</p>
                     </div>
-                    <InvoiceStatusCell status={inv.status} dueDate={inv.dueDate} align="end" variant="table" />
+                    <InvoiceStatusCell status={invoiceDisplayStatus(inv)} align="end" variant="table" />
                   </div>
                   <p className="mt-3 text-base font-semibold text-slate-900">{formatCurrency(inv.amountDue)}</p>
-                  <p className="mt-1 text-xs text-slate-500">Due {formatDate(inv.dueDate)}</p>
+                  <p className="mt-1 text-xs text-slate-500">Issued {formatDate(inv.issuedAt.split(" ")[0])} · Due {formatDate(inv.dueDate)}</p>
                   {booking && <p className="mt-2 text-xs text-slate-500">{booking.rentalType} · {booking.vehicleClassRequested}</p>}
-                  {invoicesWithTaxInvoice.has(inv.id) && <p className="mt-2 text-[11px] font-medium text-emerald-600">Tax invoice available</p>}
                 </button>
               );
             })}
@@ -153,24 +151,38 @@ export function InvoiceInbox() {
 
           <div className="hidden bg-white rounded-xl border border-slate-200 overflow-hidden md:block">
             <div className="overflow-x-auto">
-              <table className="w-full text-sm" style={{ minWidth: "900px" }}>
+              <table className="w-full table-fixed text-sm" style={{ minWidth: "1050px" }}>
+                <colgroup>
+                  <col style={{ width: "125px" }} />
+                  <col style={{ width: "130px" }} />
+                  <col style={{ width: "195px" }} />
+                  <col style={{ width: "150px" }} />
+                  <col style={{ width: "140px" }} />
+                  <col style={{ width: "130px" }} />
+                  <col style={{ width: "180px" }} />
+                </colgroup>
                 <thead>
                   <tr className="border-b border-slate-100 bg-slate-50">
-                    {["Invoice", "Booking", "Vehicle"].map((h) => (
+                    {["Invoice ID", "Booking ID", "Rental"].map((h) => (
                       <th key={h} className="text-left text-xs font-medium text-slate-400 px-4 py-2.5 whitespace-nowrap">{h}</th>
                     ))}
                     <th className="text-left text-xs font-medium text-slate-400 px-4 py-2.5 whitespace-nowrap">
-                      <button type="button" onClick={() => handleSort("dueDate")} className="inline-flex items-center gap-1 hover:text-slate-600">
+                      <button type="button" onClick={() => handleSort("issuedAt")} className="inline-flex items-center gap-1 text-xs font-medium text-slate-400 hover:text-slate-600">
+                        Issued Date<SortIndicator active={sortKey === "issuedAt"} direction={sortDir} />
+                      </button>
+                    </th>
+                    <th className="text-left text-xs font-medium text-slate-400 px-4 py-2.5 whitespace-nowrap">
+                      <button type="button" onClick={() => handleSort("dueDate")} className="inline-flex items-center gap-1 text-xs font-medium text-slate-400 hover:text-slate-600">
                         Due Date<SortIndicator active={sortKey === "dueDate"} direction={sortDir} />
                       </button>
                     </th>
                     <th className="text-left text-xs font-medium text-slate-400 px-4 py-2.5 whitespace-nowrap">
-                      <button type="button" onClick={() => handleSort("amountDue")} className="inline-flex items-center gap-1 hover:text-slate-600">
+                      <button type="button" onClick={() => handleSort("amountDue")} className="inline-flex items-center gap-1 text-xs font-medium text-slate-400 hover:text-slate-600">
                         Amount Due<SortIndicator active={sortKey === "amountDue"} direction={sortDir} />
                       </button>
                     </th>
-                    <th className="w-[170px] min-w-[170px] text-left text-xs font-medium text-slate-400 px-4 py-2.5 whitespace-nowrap">
-                      <button type="button" onClick={() => handleSort("status")} className="inline-flex items-center gap-1 hover:text-slate-600">
+                    <th className="text-left text-xs font-medium text-slate-400 px-4 py-2.5 whitespace-nowrap">
+                      <button type="button" onClick={() => handleSort("status")} className="inline-flex items-center gap-1 text-xs font-medium text-slate-400 hover:text-slate-600">
                         Invoice Status<SortIndicator active={sortKey === "status"} direction={sortDir} />
                       </button>
                     </th>
@@ -189,18 +201,16 @@ export function InvoiceInbox() {
                           >
                             {inv.id}
                           </button>
-                          {invoicesWithTaxInvoice.has(inv.id) && (
-                            <p className="text-[10px] font-medium text-emerald-600 mt-0.5">Tax invoice available</p>
-                          )}
                         </td>
                         <td className="px-4 py-3 text-xs text-slate-600 whitespace-nowrap">{inv.bookingId}</td>
-                        <td className="px-4 py-3 text-xs text-slate-600 whitespace-nowrap">
+                        <td className="px-4 py-3 text-xs text-slate-600 truncate">
                           {booking ? `${booking.rentalType} · ${booking.vehicleClassRequested}` : <span className="text-slate-300">—</span>}
                         </td>
+                        <td className="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">{formatDate(inv.issuedAt.split(" ")[0])}</td>
                         <td className="px-4 py-3 text-xs text-slate-600 whitespace-nowrap">{formatDate(inv.dueDate)}</td>
                         <td className="px-4 py-3 text-xs font-semibold text-slate-800 whitespace-nowrap">{formatCurrency(inv.amountDue)}</td>
-                        <td className="w-[170px] min-w-[170px] px-4 py-3 whitespace-nowrap">
-                          <InvoiceStatusCell status={inv.status} dueDate={inv.dueDate} align="start" variant="table" />
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <InvoiceStatusCell status={invoiceDisplayStatus(inv)} align="start" variant="table" />
                         </td>
                       </tr>
                     );

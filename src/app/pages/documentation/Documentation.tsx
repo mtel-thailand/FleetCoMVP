@@ -335,7 +335,7 @@ export function Documentation() {
               <div className="space-y-5">
                 <DemoStep number={1} title="Open the demo">Select <strong>Try the demo</strong> above, or return to the login page.</DemoStep>
                 <DemoStep number={2} title="Choose who you want to be">Choose <strong>FleetCo</strong> to manage rentals, or <strong>Thailand Post</strong> to request and follow them.</DemoStep>
-                <DemoStep number={3} title="Sign in">Use any username. The demo password is <code className="font-mono bg-slate-100 px-1.5 py-0.5 rounded">1234</code>.</DemoStep>
+                <DemoStep number={3} title="Sign in">Use any username. The demo password is <code className="font-mono bg-slate-100 px-1.5 py-0.5 rounded">Test2000</code>.</DemoStep>
                 <DemoStep number={4} title="Follow a journey">Start with a request, quotation, or invoice and follow the next action shown on screen.</DemoStep>
               </div>
               <Link to="/login" className="inline-flex items-center gap-2 mt-7 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 transition-colors">

@@ -148,14 +148,13 @@ export const OPS_NAV_SECTIONS: NavSection[] = [
   {
     // Not "soon," and not gated the way the rest of Admin is — every role
     // is allowlisted for /ops/account in auth.ts (Reset Password isn't a
-    // platform_admin-only concern), so this is the one Admin-adjacent item
-    // that actually shows up for everyone. "Account Settings," not
-    // "Account Management" (the label a reference screenshot used this was
-    // modeled on) — there's no second account to manage here, just your own.
+    // platform_admin-only concern), so this is the one System item that
+    // actually shows up for everyone. The label follows the account-management
+    // pattern used by the reference CMS while the page remains self-service.
     section: "System",
     icon: <UserCog size={16} />,
     items: [
-      { label: "Account Settings", path: "/ops/account", icon: <UserCog size={16} /> },
+      { label: "Account Management", path: "/ops/account", icon: <UserCog size={16} /> },
     ],
   },
 ];
@@ -196,7 +195,7 @@ export const CLIENT_NAV_SECTIONS: NavSection[] = [
     section: "System",
     icon: <UserCog size={16} />,
     items: [
-      { label: "Account Settings", path: "/portal/account", icon: <UserCog size={16} /> },
+      { label: "Account Management", path: "/portal/account", icon: <UserCog size={16} /> },
     ],
   },
 ];
@@ -608,7 +607,7 @@ export function Sidebar({
                 alongside the nav item rather than instead of it. */}
             <NavLink
               to={portal === "client" ? "/portal/account" : "/ops/account"}
-              title="Account Settings"
+              title="Account Management"
               onClick={handleNavClick}
               className={({ isActive }) => `flex items-center gap-2.5 flex-1 min-w-0 group cursor-pointer ${isActive ? "text-white" : ""}`}
             >

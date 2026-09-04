@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router";
-import { FileCheck2, Receipt } from "lucide-react";
+import { FileCheck2 } from "lucide-react";
 import { fleetCoBookingStatusLabel, invoiceEligible, type Booking } from "@/app/data/bookings";
 import { useInvoices } from "@/app/lib/invoicesStore";
 import { useBookings } from "@/app/lib/bookingsStore";
@@ -18,8 +18,6 @@ import { exportCSV, exportXLSX, exportDateTag } from "@/app/components/ui/export
 import { formatCurrency } from "@/app/data/formatters";
 import { useTableState } from "@/app/hooks/useTableState";
 import { useTaxInvoices } from "@/app/lib/taxInvoicesStore";
-import { useOpenTaxInvoice } from "@/app/lib/documentNav";
-import { Button } from "@/app/components/ui/Button";
 
 // brief §9 IA / §4.7's aging-adjacent needs — the ops-side "Invoices"
 // screen, every invoice plus the small pre-invoice queue for rentals that
@@ -39,13 +37,13 @@ type SortKey = "status" | "dueDate" | "amountDue" | "issuedAt";
 type SortDir = "asc" | "desc";
 type InvoiceView = "ready" | "action" | "outstanding" | "settled" | "all";
 
-const INV_HEADERS = ["Invoice ID", "Client", "Booking", "Status", "Amount Due", "Due Date", "Issued", "Tax Invoice"];
+const INV_HEADERS = ["Invoice ID", "Booking ID", "Client", "Issued Date", "Due Date", "Amount Due", "Invoice Status", "Tax Invoice ID"];
 
 function invCSVRow(i: Invoice, clientName: string, taxInvoiceId?: string): string[] {
-  return [i.id, clientName, i.bookingId, invoiceDisplayStatus(i), String(i.amountDue), formatDate(i.dueDate), formatDate(i.issuedAt), taxInvoiceId ?? ""];
+  return [i.id, i.bookingId, clientName, formatDate(i.issuedAt.split(" ")[0]), formatDate(i.dueDate), String(i.amountDue), invoiceDisplayStatus(i), taxInvoiceId ?? ""];
 }
 function invXLSXRow(i: Invoice, clientName: string, taxInvoiceId?: string): (string | number)[] {
-  return [i.id, clientName, i.bookingId, invoiceDisplayStatus(i), i.amountDue, formatDate(i.dueDate), formatDate(i.issuedAt), taxInvoiceId ?? ""];
+  return [i.id, i.bookingId, clientName, formatDate(i.issuedAt.split(" ")[0]), formatDate(i.dueDate), i.amountDue, invoiceDisplayStatus(i), taxInvoiceId ?? ""];
 }
 
 export function OpsInvoices() {
@@ -54,7 +52,6 @@ export function OpsInvoices() {
   const bookings = useBookings();
   const quotations = useQuotations();
   const taxInvoices = useTaxInvoices();
-  const openTaxInvoice = useOpenTaxInvoice();
   const clients = useClients();
   const clientById = new Map(clients.map((c) => [c.id, c]));
   const taxInvoiceByInvoiceId = new Map(taxInvoices.map((taxInvoice) => [taxInvoice.invoiceId, taxInvoice]));
@@ -68,6 +65,7 @@ export function OpsInvoices() {
       defaultDirFor: (key) => (key === "dueDate" ? "asc" : "desc"),
     });
   const { search, view } = filters;
+  const invoiceTableMinWidth = "1050px";
 
   const invoiceNeedsAction = (invoice: Invoice) => invoice.status === "Payment Submitted";
   const invoicedBookingIds = new Set(invoices.map((invoice) => invoice.bookingId));
@@ -102,8 +100,7 @@ export function OpsInvoices() {
   });
   const filtered = invoices.filter((i) => {
     const client = clientById.get(i.clientId);
-    const taxInvoice = taxInvoiceByInvoiceId.get(i.id);
-    const matchSearch = !query || i.id.toLowerCase().includes(query) || i.bookingId.toLowerCase().includes(query) || (taxInvoice?.id.toLowerCase().includes(query) ?? false) || (client?.name.toLowerCase().includes(query) ?? false);
+    const matchSearch = !query || i.id.toLowerCase().includes(query) || i.bookingId.toLowerCase().includes(query) || (client?.name.toLowerCase().includes(query) ?? false);
     const matchView =
       view === "all" ||
       (view === "action" && invoiceNeedsAction(i)) ||
@@ -130,18 +127,13 @@ export function OpsInvoices() {
 
       <FilterBar
         showSearch
-        searchableFields={view === "ready" ? ["Booking ID", "Client", "Rental Type", "Vehicle Class"] : ["Invoice ID", "Tax Invoice ID", "Booking ID", "Client"]}
+        searchableFields={view === "ready" ? ["Booking ID", "Client", "Rental Type", "Vehicle Class"] : ["Invoice ID", "Booking ID", "Client"]}
         defaultSearch={search}
         showExport
         exportDisabled={sorted.length === 0}
         onExportCSV={() => exportCSV(INV_HEADERS, sorted.map((i) => invCSVRow(i, clientById.get(i.clientId)?.name ?? i.clientId, taxInvoiceByInvoiceId.get(i.id)?.id)), `invoices-${exportDateTag()}.csv`)}
         onExportXLSX={() => exportXLSX(INV_HEADERS, sorted.map((i) => invXLSXRow(i, clientById.get(i.clientId)?.name ?? i.clientId, taxInvoiceByInvoiceId.get(i.id)?.id)), `invoices-${exportDateTag()}.xlsx`)}
         onSearch={(v) => setFilter("search", v)}
-        trailing={
-          <Button variant="outline" size="toolbar" onClick={() => navigate("/ops/documents/tax-invoices")}>
-            <FileCheck2 size={13} /> Tax invoice register
-          </Button>
-        }
       />
 
       {view === "ready" ? (
@@ -161,88 +153,47 @@ export function OpsInvoices() {
       ) : (
         <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full table-fixed text-sm" style={{ minWidth: view === "action" ? "1250px" : "1150px" }}>
+            <table className="w-full table-fixed text-sm" style={{ minWidth: invoiceTableMinWidth }}>
             <colgroup>
-              <col style={{ width: "120px" }} />
-              <col style={{ width: "190px" }} />
-              <col style={{ width: "110px" }} />
-              <col style={{ width: "170px" }} />
+              <col style={{ width: "125px" }} />
+              <col style={{ width: "130px" }} />
+              <col style={{ width: "195px" }} />
+              <col style={{ width: "150px" }} />
               <col style={{ width: "140px" }} />
               <col style={{ width: "130px" }} />
-              <col style={{ width: "120px" }} />
-              <col style={{ width: "140px" }} />
-              {view === "action" && <col style={{ width: "100px" }} />}
+              <col style={{ width: "180px" }} />
             </colgroup>
             <thead>
               <tr className="border-b border-slate-100 bg-slate-50">
                 <th className="text-left text-xs font-medium text-slate-400 px-4 py-2.5 whitespace-nowrap">Invoice ID</th>
+                <th className="text-left text-xs font-medium text-slate-400 px-4 py-2.5 whitespace-nowrap">Booking ID</th>
                 <th className="text-left text-xs font-medium text-slate-400 px-4 py-2.5 whitespace-nowrap">Client</th>
-                <th className="text-left text-xs font-medium text-slate-400 px-4 py-2.5 whitespace-nowrap">Booking</th>
-                <th className="text-left text-xs font-medium text-slate-400 px-4 py-2.5 whitespace-nowrap cursor-pointer select-none hover:text-slate-600" onClick={() => toggleSort("status")}>
-                  <span className="inline-flex items-center gap-1">Invoice Status<SortIndicator active={sortKey === "status"} direction={sortDir} /></span>
-                </th>
-                <th className="text-left text-xs font-medium text-slate-400 px-4 py-2.5 whitespace-nowrap cursor-pointer select-none hover:text-slate-600" onClick={() => toggleSort("amountDue")}>
-                  <span className="inline-flex items-center gap-1">Amount Due<SortIndicator active={sortKey === "amountDue"} direction={sortDir} /></span>
+                <th className="text-left text-xs font-medium text-slate-400 px-4 py-2.5 whitespace-nowrap cursor-pointer select-none hover:text-slate-600" onClick={() => toggleSort("issuedAt")}>
+                  <span className="inline-flex items-center gap-1">Issued Date<SortIndicator active={sortKey === "issuedAt"} direction={sortDir} /></span>
                 </th>
                 <th className="text-left text-xs font-medium text-slate-400 px-4 py-2.5 whitespace-nowrap cursor-pointer select-none hover:text-slate-600" onClick={() => toggleSort("dueDate")}>
                   <span className="inline-flex items-center gap-1">Due Date<SortIndicator active={sortKey === "dueDate"} direction={sortDir} /></span>
                 </th>
-                <th className="text-left text-xs font-medium text-slate-400 px-4 py-2.5 whitespace-nowrap cursor-pointer select-none hover:text-slate-600" onClick={() => toggleSort("issuedAt")}>
-                  <span className="inline-flex items-center gap-1">Issued<SortIndicator active={sortKey === "issuedAt"} direction={sortDir} /></span>
+                <th className="text-left text-xs font-medium text-slate-400 px-4 py-2.5 whitespace-nowrap cursor-pointer select-none hover:text-slate-600" onClick={() => toggleSort("amountDue")}>
+                  <span className="inline-flex items-center gap-1">Amount Due<SortIndicator active={sortKey === "amountDue"} direction={sortDir} /></span>
                 </th>
-                <th className="text-left text-xs font-medium text-slate-400 px-4 py-2.5 whitespace-nowrap">Tax Invoice</th>
-                {view === "action" && <th className="text-left text-xs font-medium text-slate-400 px-4 py-2.5 whitespace-nowrap">Action</th>}
+                <th className="text-left text-xs font-medium text-slate-400 px-4 py-2.5 whitespace-nowrap cursor-pointer select-none hover:text-slate-600" onClick={() => toggleSort("status")}>
+                  <span className="inline-flex items-center gap-1">Invoice Status<SortIndicator active={sortKey === "status"} direction={sortDir} /></span>
+                </th>
               </tr>
             </thead>
             <tbody>
-              {paginated.map((i) => {
-                const taxInvoice = taxInvoiceByInvoiceId.get(i.id);
-                return (
+              {paginated.map((i) => (
                 <tr key={i.id} className="border-b border-slate-50 group hover:bg-slate-50 cursor-pointer" onClick={() => navigate(`/ops/documents/invoices/${i.id}`)}>
                   <td className="px-4 py-3 text-xs text-[var(--portal-accent)] font-medium truncate">{i.id}</td>
-                  <td className="px-4 py-3 text-xs text-slate-700 truncate">{clientById.get(i.clientId)?.name ?? i.clientId}</td>
                   <td className="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">{i.bookingId}</td>
-                  <td className="px-4 py-3 whitespace-nowrap"><InvoiceStatusCell status={i.status} align="start" variant="table" /></td>
-                  <td className="px-4 py-3 text-xs text-slate-800 font-medium whitespace-nowrap">{formatCurrency(i.amountDue)}</td>
+                  <td className="px-4 py-3 text-xs text-slate-700 truncate">{clientById.get(i.clientId)?.name ?? i.clientId}</td>
+                  <td className="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">{formatDate(i.issuedAt.split(" ")[0])}</td>
                   <td className="px-4 py-3 text-xs text-slate-600 whitespace-nowrap">{formatDate(i.dueDate)}</td>
-                  <td className="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">{formatDate(i.issuedAt)}</td>
-                  <td className="px-4 py-3 text-xs whitespace-nowrap">
-                    {taxInvoice ? (
-                      <button
-                        type="button"
-                        className="font-medium text-[var(--portal-accent)] hover:text-[var(--portal-accent-hover)] cursor-pointer"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          openTaxInvoice(taxInvoice.id);
-                        }}
-                      >
-                        {taxInvoice.id}
-                      </button>
-                    ) : <span className="text-slate-300">—</span>}
-                  </td>
-                  {view === "action" && (
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      <button
-                        type="button"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          navigate(`/ops/documents/invoices/${i.id}/verify`, {
-                            state: {
-                              navPath: "/ops/documents/invoices",
-                              returnTo: "/ops/documents/invoices",
-                              returnLabel: "Invoices & Payments",
-                            },
-                          });
-                        }}
-                        className="inline-flex items-center gap-1.5 text-xs font-medium text-[var(--portal-accent)] hover:text-[var(--portal-accent-hover)] cursor-pointer"
-                      >
-                        <FileCheck2 size={13} /> Review
-                      </button>
-                    </td>
-                  )}
+                  <td className="px-4 py-3 text-xs text-slate-800 font-medium whitespace-nowrap">{formatCurrency(i.amountDue)}</td>
+                  <td className="px-4 py-3 whitespace-nowrap"><InvoiceStatusCell status={invoiceDisplayStatus(i)} align="start" variant="table" /></td>
                 </tr>
-                );
-              })}
+              ))}
             </tbody>
             </table>
           </div>

@@ -5,6 +5,7 @@ import { Calendar } from "lucide-react";
 import { Calendar as DayCalendar } from "@/app/components/ui/calendar";
 import { useI18n, formatUiDate } from "@/app/i18n";
 import { cn } from "@/app/components/ui/utils";
+import { getAdminRole, ROLE_PORTAL } from "@/app/lib/auth";
 
 // Single-date replacement for native <input type="date">. That control's own
 // closed box can be styled freely, but the moment it's clicked the OS/browser
@@ -50,6 +51,8 @@ export function DatePicker({
 }) {
   const { language } = useI18n();
   const [open, setOpen] = useState(false);
+  const role = getAdminRole();
+  const portal = role ? ROLE_PORTAL[role] : "fleetco";
 
   const selected = value ? new Date(`${value}T00:00:00`) : undefined;
 
@@ -73,7 +76,10 @@ export function DatePicker({
         </button>
       </Popover.Trigger>
       <Popover.Portal>
+        {/* The calendar is portalled to body, so restore the active portal
+            scope here for selected/today states and focus rings. */}
         <Popover.Content
+          data-portal={portal}
           align="start"
           sideOffset={4}
           avoidCollisions

@@ -27,7 +27,7 @@ const pageTitles: Record<string, { title: string; subtitle: string }> = {
   "/ops/admin/roles":             { title: "Roles & Permissions",    subtitle: "Admin" },
   "/ops/admin/notifications":     { title: "Notifications",          subtitle: "Admin" },
   "/ops/admin/audit-log":         { title: "Audit Log",              subtitle: "Admin" },
-  "/ops/account":                 { title: "Account Settings",       subtitle: "System" },
+  "/ops/account":                 { title: "Account Management",      subtitle: "System" },
 
   // Client Self-Service Portal
   "/portal/dashboard":              { title: "Overview",             subtitle: "Dashboard" },
@@ -36,7 +36,7 @@ const pageTitles: Record<string, { title: string; subtitle: string }> = {
   "/portal/tracking":               { title: "Live Map",             subtitle: "Rentals" },
   "/portal/documents/invoices":     { title: "Invoices & Payments",  subtitle: "Billing" },
   "/portal/billing-history":        { title: "Billing History",      subtitle: "Reports" },
-  "/portal/account":                 { title: "Account Settings",     subtitle: "System" },
+  "/portal/account":                 { title: "Account Management",    subtitle: "System" },
 };
 
 export function Layout() {

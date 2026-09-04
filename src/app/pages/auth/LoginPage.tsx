@@ -251,8 +251,7 @@ export function LoginPage() {
               </button>
             </div>
 
-            {/* The "Demo mode — sign in with any username and password
-                1234" helper text used to sit here unconditionally — removed
+            {/* The demo-password helper text used to sit here unconditionally — removed
                 for clarity, since real users of this login page shouldn't
                 see demo/test credentials called out on it. The error path
                 stays: username/password are still validated against

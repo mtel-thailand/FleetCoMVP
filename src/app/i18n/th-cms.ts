@@ -373,6 +373,8 @@ export const thCms: Record<string, string> = {
   "Tax Invoice ID": "รหัสใบกำกับภาษี",
   "Invoice Status": "สถานะใบแจ้งหนี้",
   "Invoice status": "สถานะใบแจ้งหนี้",
+  "Issued Date": "วันที่ออกใบแจ้งหนี้",
+  "Awaiting Verification": "รอตรวจสอบการชำระเงิน",
   "Total Amount": "ยอดรวม",
   "Total Tax Invoices": "ใบกำกับภาษีทั้งหมด",
   "Total Value": "มูลค่ารวม",

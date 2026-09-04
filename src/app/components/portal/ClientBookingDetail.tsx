@@ -389,14 +389,14 @@ export function ClientBookingDetail({
     // Rejected, rose for Declined, slate for Cancelled).
     const declineLabel = clientBookingStatusLabel(booking);
     const tone =
-      booking.status === "Cancelled" ? "bg-slate-50 border-slate-100 text-slate-500"
+      booking.status === "Cancelled" ? "bg-slate-100 border-slate-300 text-slate-700"
       : declineLabel === "Rejected" ? "bg-orange-50 border-orange-100 text-orange-700"
       : "bg-rose-50 border-rose-100 text-rose-700"; // Declined
     const lead = booking.status === "Cancelled" ? "Cancellation reason: " : declineLabel === "Rejected" ? "Rejection reason: " : "Decline reason: ";
     actionArea = (
-      <div className={`border rounded-lg px-3 py-2.5 text-xs leading-relaxed ${tone}`}>
-        <span className="font-semibold">{lead}</span>
-        {outcomeReason}
+      <div className={`flex items-start gap-2 border rounded-lg px-3 py-2.5 text-xs leading-relaxed ${tone}`}>
+        {booking.status === "Cancelled" && <XCircle size={14} className="mt-0.5 shrink-0 text-slate-500" aria-hidden="true" />}
+        <span><span className="font-semibold">{lead}</span>{outcomeReason}</span>
       </div>
     );
   } else if (booking.status === "Requested") {

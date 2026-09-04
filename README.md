@@ -22,7 +22,7 @@ npm run dev
 ```
 
 Demo login: choose FleetCo or Thailand Post, use any username and password
-`1234`. The demo signs into that portal's primary admin persona; role and
+`Test2000`. The demo signs into that portal's primary admin persona; role and
 permission testing is intentionally outside the MVP scope.
 
 ## Status
