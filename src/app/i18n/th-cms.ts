@@ -700,7 +700,6 @@ export const thCms: Record<string, string> = {
 
   // Dynamic labels rendered from page configuration
   "Needs Quotation": "ต้องจัดทำใบเสนอราคา",
-  "Needs Revision": "ต้องแก้ไขใบเสนอราคา",
   "Awaiting Client": "รอลูกค้า",
   "Closed": "ปิดแล้ว",
   "Not yet quoted": "ยังไม่ได้เสนอราคา",

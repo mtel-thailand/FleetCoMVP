@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { useNavigate } from "react-router";
-import { FileText } from "lucide-react";
 import { bookingQuotations, bookingStatusLabel, isRequestBooking, type Booking } from "@/app/data/bookings";
 import type { ClientAccount } from "@/app/data/clients";
 import { BOOKING_STATUS_PRIORITY } from "@/app/data/bookingStatus";
@@ -18,7 +17,6 @@ import { exportCSV, exportXLSX, parseExcelDate, exportDateTag } from "@/app/comp
 import { useBookings } from "@/app/lib/bookingsStore";
 import { useQuotations } from "@/app/lib/quotationsStore";
 import { useClients } from "@/app/lib/clientsStore";
-import { Button } from "@/app/components/ui/Button";
 
 // ── All Requests — ops's own half of the REQUEST_STATUSES/RENTAL_STATUSES
 // partition (see bookings.ts) that already splits the client portal into My
@@ -42,19 +40,19 @@ const RENTAL_TYPES = ["Ad hoc / Daily", "Short term", "Medium term", "Long term"
 
 type SortKey = "status" | "startDate" | "created" | "updated";
 type SortDir = "asc" | "desc";
-type RequestView = "all" | "needsQuotation" | "needsRevision" | "awaitingClient" | "closed";
+type RequestView = "all" | "needsQuotation" | "awaitingClient" | "closed";
 
 // Request tabs intentionally group user work rather than treating every
-// time-based condition as a new booking status. An expired quotation is an
-// explicit revision queue: the offer ended, but the underlying request may
-// still be commercially viable.
+// time-based condition as a new booking status. Expiry is history for this
+// MVP: the offer ended, so it belongs under Closed alongside declined and
+// cancelled requests. A still-viable expired request can be reopened from
+// its booking detail with the explicit Issue Revision action.
 function matchesRequestView(booking: Booking, view: RequestView, quotations: Quotation[]) {
   const quotation = bookingQuotations(booking.id, quotations)[0];
   const quotationExpired = booking.status === "Quoted" && !!quotation && isQuotationExpired(quotation);
   if (view === "needsQuotation") return booking.status === "Requested";
-  if (view === "needsRevision") return quotationExpired;
   if (view === "awaitingClient") return booking.status === "Quoted" && !quotationExpired;
-  if (view === "closed") return booking.status === "Declined" || booking.status === "Cancelled";
+  if (view === "closed") return quotationExpired || booking.status === "Declined" || booking.status === "Cancelled";
   return true;
 }
 
@@ -100,7 +98,9 @@ export function AllRequests() {
   // the same fix already applied to the client portal's list pages.
   // View defaults to the first tab (Needs Quotation), not All — landing on
   // this page opens straight onto new requests rather than the full,
-  // undifferentiated list.
+  // undifferentiated list. The old Needs Revision tab was removed in this
+  // MVP; normalize a persisted value from an earlier build to Closed so a
+  // returning user never lands on a tab that no longer exists.
   const { filters, setFilter, sortKey, sortDir, toggleSort, page, setPage } =
     useTableState<{ search: string; view: RequestView; type: string }, SortKey>({
       storageKey: "opsRequests",
@@ -108,13 +108,14 @@ export function AllRequests() {
       sort: { key: "created", dir: "desc" },
       defaultDirFor: (key) => (key === "status" ? "asc" : "desc"),
     });
-  const { search, view, type: typeFilter } = filters;
+  const { search, type: typeFilter } = filters;
+  const storedView = filters.view as string;
+  const view = (storedView === "needsRevision" ? "closed" : storedView) as RequestView;
 
   const rows = allBookings.filter((b) => isRequestBooking(b));
 
   const tabOptions = [
     { value: "needsQuotation", label: "Needs Quotation", count: rows.filter((b) => matchesRequestView(b, "needsQuotation", quotations)).length, highlight: true },
-    { value: "needsRevision", label: "Needs Revision", count: rows.filter((b) => matchesRequestView(b, "needsRevision", quotations)).length, highlight: true },
     { value: "awaitingClient", label: "Awaiting Client", count: rows.filter((b) => matchesRequestView(b, "awaitingClient", quotations)).length },
     { value: "closed", label: "Closed", count: rows.filter((b) => matchesRequestView(b, "closed", quotations)).length },
     { value: "all", label: "All", count: rows.length },
@@ -152,11 +153,6 @@ export function AllRequests() {
         onExportXLSX={() => exportXLSX(BK_HEADERS, sorted.map((b) => bkXLSXRow(b, clientById, quotations)), `requests-${view}-${exportDateTag()}.xlsx`)}
         onSearch={(v) => setFilter("search", v)}
         defaultSearch={search}
-        trailing={
-          <Button variant="outline" size="toolbar" onClick={() => navigate("/ops/documents/quotations")}>
-            <FileText size={13} /> Quotation register
-          </Button>
-        }
         extraFilters={
           <>
             <FilterDropdown

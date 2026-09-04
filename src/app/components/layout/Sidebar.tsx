@@ -504,9 +504,10 @@ export function Sidebar({
       if (needsPayment > 0) badgeByPath["/portal/documents/invoices"] = needsPayment;
     }
   } else {
-    // Requests owns both quotation actions: preparing the first quotation and
-    // revising an issued quotation that has expired. The sidebar count mirrors
-    // those two highlighted tabs rather than a separate document-type badge.
+    // Requests owns the active quotation action: preparing the first
+    // quotation. Expired quotations live under the Closed tab in this MVP and
+    // are not active work until an operator explicitly opens one and chooses
+    // Issue Revision.
     // Billing has two actionable queues, so its badge is their combined
     // workload: invoices ready to issue plus submitted payments for review.
     const needsQuotation = bookings.filter((booking) => booking.status === "Requested").length;
@@ -523,8 +524,7 @@ export function Sidebar({
     ).length;
     const paymentsToReview = invoices.filter((invoice) => invoice.status === "Payment Submitted").length;
     const billingActions = readyToIssue + paymentsToReview;
-    const expiredQuotations = quotations.filter((quotation) => quotation.status === "Issued" && isQuotationExpired(quotation)).length;
-    const requestActions = needsQuotation + expiredQuotations;
+    const requestActions = needsQuotation;
     if (requestActions > 0) badgeByPath["/ops/requests"] = requestActions;
     if (rentalActions > 0) badgeByPath["/ops/rentals"] = rentalActions;
     if (billingActions > 0) badgeByPath["/ops/documents/invoices"] = billingActions;
