@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Bell, Mail, Check } from "lucide-react";
 import { NOTIFICATION_EVENT_TYPES } from "@/app/data/notifications";
-import { useNotifications, markAllRead } from "@/app/lib/notificationsStore";
+import { useNotificationPreferences, useNotifications, markAllRead, updateNotificationPreference } from "@/app/lib/notificationsStore";
 import { formatDate } from "@/app/components/ui/utils";
+import { translate } from "@/app/i18n";
 
 // brief §4.8/§8: "Notification center + email notifications; configurable
 // per event type. Design a consistent notification anatomy."
@@ -11,16 +12,14 @@ import { formatDate } from "@/app/components/ui/utils";
 // this is ops's own admin view of every notification the system has sent,
 // client-bound or fleetco-bound, same audit-style reasoning as Audit Log.
 //
-// Settings tab's toggles are still local useState, not wired to
-// notificationsStore — "Saved automatically" is aspirational copy for a
-// wiring pass that hasn't happened yet (flipping a toggle here doesn't
-// currently change what addNotification() sends). Left as-is; not part of
-// the live-wiring/click-through/mark-as-read work this file just got.
-
-function Toggle({ on, onClick }: { on: boolean; onClick: () => void }) {
+function Toggle({ on, onClick, label }: { on: boolean; onClick: () => void; label: string }) {
   return (
     <button
       onClick={onClick}
+      type="button"
+      role="switch"
+      aria-checked={on}
+      aria-label={label}
       className={`relative w-9 h-5 rounded-full transition-colors cursor-pointer shrink-0 ${on ? "bg-[var(--portal-accent)]" : "bg-slate-200"}`}
     >
       <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${on ? "translate-x-4" : ""}`} />
@@ -29,15 +28,17 @@ function Toggle({ on, onClick }: { on: boolean; onClick: () => void }) {
 }
 
 export function NotificationCenter() {
-  const [prefs, setPrefs] = useState(() =>
-    Object.fromEntries(NOTIFICATION_EVENT_TYPES.map((e) => [e.id, { inApp: e.defaultInApp, email: e.defaultEmail }])),
-  );
   const [tab, setTab] = useState<"settings" | "recent">("recent");
   const log = useNotifications();
-  const unreadCount = log.filter((n) => !n.read).length;
+  const prefs = useNotificationPreferences();
+  const unreadCount = log.filter((n) => n.channels.includes("in_app") && !n.read).length;
+  const recent = useMemo(
+    () => [...log].sort((a, b) => b.sentAt.localeCompare(a.sentAt)),
+    [log],
+  );
 
   function toggle(id: string, channel: "inApp" | "email") {
-    setPrefs((p) => ({ ...p, [id]: { ...p[id], [channel]: !p[id][channel] } }));
+    updateNotificationPreference(id, channel, !prefs[id][channel]);
   }
 
   return (
@@ -76,7 +77,7 @@ export function NotificationCenter() {
               </button>
             </div>
           )}
-          {log.map((n) => {
+          {recent.map((n) => {
             const eventType = NOTIFICATION_EVENT_TYPES.find((e) => e.id === n.eventTypeId);
             return (
               <div key={n.id} className={`flex items-start gap-3 p-4 rounded-xl border ${n.read ? "bg-white border-slate-100" : "bg-[var(--portal-accent-light)]/50 border-[var(--portal-accent-light-2)]"}`}>
@@ -85,19 +86,19 @@ export function NotificationCenter() {
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center justify-between gap-2">
-                    <p className="text-xs font-semibold text-slate-800">{eventType?.label ?? n.eventTypeId}</p>
+                    <p className="text-xs font-semibold text-slate-800">{translate(eventType?.label ?? n.eventTypeId)}</p>
                     <span className="text-xs text-slate-400 shrink-0">{formatDate(n.sentAt)}</span>
                   </div>
                   <p className="text-xs text-slate-600 mt-1">{n.message}</p>
                   <div className="flex items-center gap-3 mt-1.5">
-                    <span className="text-xs text-slate-400">To: {n.recipient}</span>
+                    <span className="text-xs text-slate-400">{translate("To:")} {translate(n.recipient)}</span>
                     <span className="flex items-center gap-1 text-xs text-slate-400">
                       {n.channels.includes("email") && <Mail size={11} />}
                       {n.channels.join(" + ")}
                     </span>
                   </div>
                 </div>
-                {!n.read && <span className="w-1.5 h-1.5 bg-[var(--portal-accent)] rounded-full shrink-0 mt-1.5" />}
+                {!n.read && n.channels.includes("in_app") && <span className="w-1.5 h-1.5 bg-[var(--portal-accent)] rounded-full shrink-0 mt-1.5" />}
               </div>
             );
           })}
@@ -112,11 +113,11 @@ export function NotificationCenter() {
           {NOTIFICATION_EVENT_TYPES.map((e) => (
             <div key={e.id} className="grid grid-cols-[1fr_80px_80px] gap-2 px-5 py-3 border-b border-slate-50 last:border-0 items-center">
               <div>
-                <p className="text-xs font-medium text-slate-800">{e.label}</p>
-                <p className="text-xs text-slate-400 mt-0.5">{e.description}</p>
+                <p className="text-xs font-medium text-slate-800">{translate(e.label)}</p>
+                <p className="text-xs text-slate-400 mt-0.5">{translate(e.description)}</p>
               </div>
-              <div className="flex justify-center"><Toggle on={prefs[e.id].inApp} onClick={() => toggle(e.id, "inApp")} /></div>
-              <div className="flex justify-center"><Toggle on={prefs[e.id].email} onClick={() => toggle(e.id, "email")} /></div>
+              <div className="flex justify-center"><Toggle on={prefs[e.id].inApp} onClick={() => toggle(e.id, "inApp")} label={`${translate(e.label)}: ${translate("In-App")}`} /></div>
+              <div className="flex justify-center"><Toggle on={prefs[e.id].email} onClick={() => toggle(e.id, "email")} label={`${translate(e.label)}: ${translate("Email")}`} /></div>
             </div>
           ))}
           <div className="px-5 py-3 flex justify-end">

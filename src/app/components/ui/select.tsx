@@ -58,10 +58,10 @@ function SelectContent({
   className,
   children,
   position = "popper",
+  portal = true,
   ...props
-}: React.ComponentProps<typeof SelectPrimitive.Content>) {
-  return (
-    <SelectPrimitive.Portal>
+}: React.ComponentProps<typeof SelectPrimitive.Content> & { portal?: boolean }) {
+  const content = (
       <SelectPrimitive.Content
         data-slot="select-content"
         className={cn(
@@ -85,8 +85,8 @@ function SelectContent({
         </SelectPrimitive.Viewport>
         <SelectScrollDownButton />
       </SelectPrimitive.Content>
-    </SelectPrimitive.Portal>
   );
+  return portal ? <SelectPrimitive.Portal>{content}</SelectPrimitive.Portal> : content;
 }
 
 function SelectLabel({

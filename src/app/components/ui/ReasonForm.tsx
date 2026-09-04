@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { Button } from "@/app/components/ui/Button";
+import { Textarea } from "@/app/components/ui/Input";
 
 // Generic reason-collecting confirm step — shared by every "explain why,
 // then confirm" action across both portals (Decline a quotation, Cancel a
@@ -17,17 +19,16 @@ export function ReasonForm({
   return (
     <div className="bg-slate-50 rounded-xl p-4 space-y-3">
       <label className="text-xs font-medium text-slate-600 block">{title}</label>
-      <textarea
+      <Textarea
         rows={3}
         value={reason}
         onChange={(e) => setReason(e.target.value)}
         placeholder={placeholder}
-        className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-[var(--portal-accent)] resize-none"
       />
       <div className="flex gap-2">
-        <button onClick={onCancel} className="flex-1 py-2 border border-slate-200 rounded-lg text-xs text-slate-600 hover:bg-white cursor-pointer">
+        <Button variant="outline" size="md" className="flex-1 px-0 py-2" onClick={onCancel}>
           Back
-        </button>
+        </Button>
         <button
           disabled={required && !reason.trim()}
           onClick={() => onConfirm(reason.trim())}

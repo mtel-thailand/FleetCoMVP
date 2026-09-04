@@ -3,16 +3,19 @@
 // anatomy." Event-type catalog below is the "anatomy"; mockNotificationLog
 // is the seed a fresh session starts from — notificationsStore.ts is what
 // actually keeps it live from here, appending a real entry every time one
-// of the 7 events below actually happens (see documentActions.ts,
-// RequestVehicle.tsx, OpsBookingDetailPanel.tsx for the call sites).
+// of these events actually happens (see documentActions.ts, RequestVehicle.tsx,
+// OpsBookingDetailPanel.tsx, and ClientBookingDetail.tsx's handleCancelBooking
+// for the call sites).
 //
-// compliance_expiry and booking_cancelled are catalogued but never fired
-// live: compliance_expiry would need a derived/cron-style check rather than
-// a single user action, and booking_cancelled's only real trigger (Cancel
-// Booking) is itself switched off — see ClientBookingDetail.tsx's
-// SHOW_BOOKING_UTILITY_ACTIONS. Both stay in the catalog (and NTF-003 below
-// still shows what booking_cancelled would look like) so Settings still has
-// something to display for them.
+// compliance_expiry is the one event still catalogued but never fired live —
+// it would need a derived/cron-style check rather than a single user action
+// to trigger it. Stays in the catalog anyway so Settings still has something
+import { rebaseDemoDates } from "./demoDates";
+// to display for it. booking_cancelled used to be in the same boat (its
+// only trigger, Cancel Booking, existed but never actually called
+// addNotification) — that's fixed now; NTF-007 below is a real example, not
+// a stand-in. Declining a quotation deliberately fires quotation_decided
+// instead, not this one — see NTF-003's own comment below.
 
 export type NotificationEventType = {
   id: string;
@@ -21,6 +24,8 @@ export type NotificationEventType = {
   defaultInApp: boolean;
   defaultEmail: boolean;
 };
+
+export type NotificationPreferences = Record<string, { inApp: boolean; email: boolean }>;
 
 export const NOTIFICATION_EVENT_TYPES: NotificationEventType[] = [
   { id: "new_request", label: "New Vehicle Request", description: "A client submits a new booking request.", defaultInApp: true, defaultEmail: true },
@@ -52,9 +57,9 @@ export type NotificationLogEntry = {
   read: boolean;
 };
 
-export const mockNotificationLog: NotificationLogEntry[] = [
-  { id: "NTF-001", eventTypeId: "payment_submitted", message: "Thailand Post submitted payment for INV-2026-0001 (KBank20260814-0099).", recipient: "FleetCo Finance", portal: "fleetco", bookingId: "BK-2026-0008", channels: ["in_app", "email"], sentAt: "2026-08-14 10:15", read: false },
-  { id: "NTF-002", eventTypeId: "quotation_decided", message: "Thailand Post accepted QT-2026-0001 (฿11,984.00).", recipient: "FleetCo Account Team", portal: "fleetco", bookingId: "BK-2026-0002", channels: ["in_app", "email"], sentAt: "2026-08-14 09:40", read: false },
+export const mockNotificationLog: NotificationLogEntry[] = rebaseDemoDates<NotificationLogEntry[]>([
+  { id: "NTF-001", eventTypeId: "payment_submitted", message: "Thailand Post submitted payment for INV-2026-0005 (KBank20260812-0077).", recipient: "FleetCo Finance", portal: "fleetco", bookingId: "BK-2026-0004", channels: ["in_app", "email"], sentAt: "2026-08-12 10:15", read: false },
+  { id: "NTF-002", eventTypeId: "quotation_decided", message: "Thailand Post accepted QT-2026-0017 (฿26,215.00).", recipient: "FleetCo Account Team", portal: "fleetco", bookingId: "BK-2026-0023", channels: ["in_app", "email"], sentAt: "2026-08-22 15:30", read: false },
   // Reclassified from booking_cancelled to quotation_decided — that event
   // type's own label already covers "Accepted / Declined," so a decline
   // belongs here with NTF-002, not under a separate cancellation category.
@@ -62,11 +67,12 @@ export const mockNotificationLog: NotificationLogEntry[] = [
   { id: "NTF-004", eventTypeId: "new_request", message: "New request BK-2026-0001 — 2× Van, ad hoc, 18 Aug 2026.", recipient: "FleetCo Operations", portal: "fleetco", bookingId: "BK-2026-0001", channels: ["in_app", "email"], sentAt: "2026-08-14 08:10", read: true },
   { id: "NTF-005", eventTypeId: "compliance_expiry", message: "Vehicle 8กฌ 4455 (Toyota Camry) — registration, insurance, and tax sticker all expire 18 Aug 2026.", recipient: "FleetCo Operations", portal: "fleetco", channels: ["in_app"], sentAt: "2026-08-13 06:00", read: true },
   { id: "NTF-006", eventTypeId: "assignment_made", message: "Pickup truck 3กง 7788 and driver Prasert Boonmee assigned to BK-2026-0006.", recipient: "Thailand Post — Pakawat Chuenjai", portal: "client", bookingId: "BK-2026-0006", channels: ["in_app"], sentAt: "2026-08-10 11:00", read: true },
-  { id: "NTF-007", eventTypeId: "invoice_issued", message: "Invoice INV-2026-0001 issued — ฿2,354.00 due 6 Aug 2026.", recipient: "Thailand Post — Suphaporn Wongsa", portal: "client", bookingId: "BK-2026-0008", channels: ["in_app", "email"], sentAt: "2026-07-07 09:00", read: true },
-  { id: "NTF-008", eventTypeId: "payment_verified", message: "Payment verified for INV-2026-0003 — tax invoice TI-2026-0001 issued.", recipient: "Thailand Post — Suphaporn Wongsa", portal: "client", bookingId: "BK-2026-0010", channels: ["in_app", "email"], sentAt: "2026-07-11 09:30", read: true },
+  { id: "NTF-007", eventTypeId: "booking_cancelled", message: "BK-2026-0013 was cancelled by the client: Event postponed by the organizer — no longer needed for these dates.", recipient: "FleetCo Operations", portal: "fleetco", bookingId: "BK-2026-0013", channels: ["in_app"], sentAt: "2026-08-15 09:00", read: true },
+  { id: "NTF-008", eventTypeId: "invoice_issued", message: "Invoice INV-2026-0001 issued — ฿2,354.00 due 6 Aug 2026.", recipient: "Thailand Post — Suphaporn Wongsa", portal: "client", bookingId: "BK-2026-0008", channels: ["in_app", "email"], sentAt: "2026-07-07 09:00", read: true },
+  { id: "NTF-009", eventTypeId: "payment_verified", message: "Payment verified for INV-2026-0003 — tax invoice TI-2026-0001 issued.", recipient: "Thailand Post — Suphaporn Wongsa", portal: "client", bookingId: "BK-2026-0010", channels: ["in_app", "email"], sentAt: "2026-07-11 09:30", read: true },
   // quotation_issued previously had zero sample entries in this log despite
   // being a cataloged event type — added so "what does a New Quotation
   // notification look like" has an actual answer, and it's the natural
   // predecessor of NTF-002 above (same quotation, accepted a day later).
-  { id: "NTF-009", eventTypeId: "quotation_issued", message: "Quotation QT-2026-0001 is ready for your review — ฿11,984.00.", recipient: "Thailand Post — Pakawat Chuenjai", portal: "client", bookingId: "BK-2026-0002", channels: ["in_app", "email"], sentAt: "2026-08-12 10:00", read: true },
-];
+  { id: "NTF-010", eventTypeId: "quotation_issued", message: "Quotation QT-2026-0001 is ready for your review — ฿11,984.00.", recipient: "Thailand Post — Pakawat Chuenjai", portal: "client", bookingId: "BK-2026-0002", channels: ["in_app", "email"], sentAt: "2026-08-12 10:00", read: true },
+]);

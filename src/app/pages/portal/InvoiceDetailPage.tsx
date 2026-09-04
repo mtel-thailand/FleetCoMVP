@@ -1,4 +1,5 @@
-import { useNavigate, useParams } from "react-router";
+import { useLocation, useNavigate, useParams } from "react-router";
+import { Button } from "@/app/components/ui/Button";
 import { ArrowLeft, FileQuestion } from "lucide-react";
 import { useInvoices } from "@/app/lib/invoicesStore";
 import { CLIENT_ID } from "@/app/lib/currentClient";
@@ -13,9 +14,27 @@ import { usePageHeader } from "@/app/lib/pageHeaderStore";
 export function InvoiceDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const invoices = useInvoices();
 
   const invoice = invoices.find((i) => i.id === id && i.clientId === CLIENT_ID);
+  const routeState = location.state as { fromBookingId?: string; navPath?: string; returnTo?: string; returnLabel?: string; returnState?: unknown } | null;
+
+  function handleBack() {
+    if (routeState?.returnTo?.startsWith("/portal/")) {
+      navigate(routeState.returnTo, { state: routeState.returnState });
+      return;
+    }
+    if (routeState?.fromBookingId) {
+      navigate(`/portal/bookings/${routeState.fromBookingId}`, { state: routeState.returnState });
+      return;
+    }
+    if (routeState?.navPath?.startsWith("/portal/")) {
+      navigate(routeState.navPath);
+      return;
+    }
+    navigate("/portal/documents/invoices");
+  }
 
   // Same header pattern as QuotationDetailPage — doc type as the title,
   // the booking it belongs to as the subtitle.
@@ -23,12 +42,11 @@ export function InvoiceDetailPage() {
 
   return (
     <div>
-      <button
-        onClick={() => navigate(-1)}
-        className="flex items-center gap-1.5 text-xs font-medium text-slate-500 hover:text-slate-800 mb-4 cursor-pointer"
+      <Button variant="ghost" size="icon" className="flex items-center gap-1.5 text-xs mb-4"
+        onClick={handleBack}
       >
-        <ArrowLeft size={14} /> Back
-      </button>
+        <ArrowLeft size={14} /> {routeState?.returnTo && routeState.returnLabel ? `Back to ${routeState.returnLabel}` : routeState?.fromBookingId ? "Back to Booking" : "Back to Invoices & Payments"}
+      </Button>
 
       {invoice ? (
         <InvoiceDetail invoice={invoice} />

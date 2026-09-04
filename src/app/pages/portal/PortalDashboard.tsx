@@ -3,10 +3,13 @@ import { Car, CalendarClock, FileText, AlertCircle, ArrowUpRight } from "lucide-
 import { useBookings } from "@/app/lib/bookingsStore";
 import { useQuotations } from "@/app/lib/quotationsStore";
 import { useInvoices } from "@/app/lib/invoicesStore";
+import { isQuotationExpired } from "@/app/data/quotations";
+import { invoiceDisplayStatus } from "@/app/data/invoices";
 import type { VehicleClass } from "@/app/data/vehicles";
 import { formatCurrency } from "@/app/data/formatters";
 import { formatDate } from "@/app/components/ui/utils";
 import { CLIENT_ID } from "@/app/lib/currentClient";
+import { localeFor, useI18n } from "@/app/i18n";
 
 // brief §5.4: "Overview: active rentals count, upcoming starts/ends, pending
 // quotations, unpaid invoices, monthly spend to date. Usage reports: rentals
@@ -15,7 +18,6 @@ import { CLIENT_ID } from "@/app/lib/currentClient";
 
 const UPCOMING_WINDOW_DAYS = 14;
 const MONTHS_SHOWN = 6;
-const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 function MetricCard({ title, value, subtitle, icon, color }: {
   title: string; value: string; subtitle?: string; icon: React.ReactNode; color: string;
@@ -46,14 +48,15 @@ function monthKey(dateStr: string): string {
 }
 
 export function PortalDashboard() {
+  const { language } = useI18n();
   const bookings = useBookings().filter((b) => b.clientId === CLIENT_ID);
   const quotations = useQuotations().filter((q) => q.clientId === CLIENT_ID);
   const invoices = useInvoices().filter((i) => i.clientId === CLIENT_ID);
   const bookingById = new Map(bookings.map((b) => [b.id, b]));
 
   const activeRentals = bookings.filter((b) => b.status === "Active");
-  const pendingQuotations = quotations.filter((q) => q.status === "Issued");
-  const outstandingInvoices = invoices.filter((i) => i.status === "Unpaid" || i.status === "Overdue" || i.status === "Payment Issue");
+  const pendingQuotations = quotations.filter((q) => q.status === "Issued" && !isQuotationExpired(q));
+  const outstandingInvoices = invoices.filter((i) => ["Unpaid", "Overdue", "Payment Issue"].includes(invoiceDisplayStatus(i)));
   const outstandingTotal = outstandingInvoices.reduce((sum, i) => sum + i.amountDue, 0);
 
   const upcoming = bookings
@@ -75,7 +78,10 @@ export function PortalDashboard() {
   const now = new Date();
   const monthBuckets = Array.from({ length: MONTHS_SHOWN }, (_, i) => {
     const d = new Date(now.getFullYear(), now.getMonth() - (MONTHS_SHOWN - 1 - i), 1);
-    return { key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`, label: MONTH_NAMES[d.getMonth()] };
+    return {
+      key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`,
+      label: new Intl.DateTimeFormat(localeFor(language), { month: "short" }).format(d),
+    };
   });
   const spendByMonth = monthBuckets.map((m) => ({
     month: m.label,

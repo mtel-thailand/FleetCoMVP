@@ -6,6 +6,7 @@ import type { VehicleClass } from "./vehicles";
 import type { Quotation } from "./quotations";
 import type { Invoice } from "./invoices";
 import type { TaxInvoice } from "./taxInvoices";
+import { rebaseDemoDates } from "./demoDates";
 
 export type RentalType = "Ad hoc / Daily" | "Short term" | "Medium term" | "Long term";
 
@@ -14,6 +15,7 @@ export type RentalType = "Ad hoc / Daily" | "Short term" | "Medium term" | "Long
 // an explicit {vehicleId, driverId} pair rather than two parallel arrays so
 // the two can't drift out of index-sync with each other.
 export type VehicleDriverAssignment = { vehicleId: string; driverId: string };
+export type CancellationActor = "client" | "fleetco";
 
 export type Booking = {
   id: string;
@@ -25,6 +27,9 @@ export type Booking = {
   startDate: string;
   endDate: string;
   pickupLocation: string;
+  // Legal tax-registration branch selected for billing documents. Separate
+  // from pickupLocation, which is the physical vehicle delivery site.
+  taxBranchId?: string;
   jobNotes: string;
   status: BookingStatus;
   // Length grows toward `quantity` as ops assigns each unit — a booking can
@@ -47,11 +52,34 @@ export type Booking = {
   // (quotation.updated when status is "Accepted") — a vehicle+driver can't be
   // assigned to a booking whose quotation hasn't been accepted yet.
   assignedAt?: string;
+  // Same "survives later transitions" reasoning as assignedAt, for the same
+  // reason: RentalTimeline needs the real moment Start Rental / Complete
+  // Rental were actually confirmed, not booking.startDate/endDate (the
+  // plan) — those used to double as this timeline's timestamps too, back
+  // when Start/Complete were assumed to happen exactly on schedule. They
+  // don't; both are manual-only precisely because a click, not a calendar
+  // date, is what's trustworthy here (see the Assignment section's
+  // "started early"/"overdue to start"/"overdue to complete" states, all of
+  // which are evidence the two diverge in practice). completedAt in
+  // particular can't just fall back on `updated` either, even though
+  // Completed is terminal today and nothing currently mutates a booking
+  // after it — that's a fact about today's call sites, not a guarantee this
+  // field should depend on. Undefined for anything that hasn't reached
+  // Active/Completed yet, or for older records from before this field
+  // existed; RentalTimeline falls back to startDate/endDate for those.
+  startedAt?: string;
+  completedAt?: string;
   quotationId?: string;
   invoiceId?: string;
   taxInvoiceId?: string;
   isRecurringBilling: boolean;
   declineReason?: string;
+  // Cancellation keeps its lifecycle origin because the same terminal
+  // status can belong to either My Requests or My Rentals.
+  cancelledFromStatus?: BookingStatus;
+  cancelledBy?: CancellationActor;
+  cancelledAt?: string;
+  cancellationReason?: string;
   created: string;
   updated: string;
 };
@@ -124,7 +152,7 @@ export function needsFleetCoAction(booking: Booking, invoices: Invoice[], taxInv
   return invoiceEligible(booking);
 }
 
-/** Display-only split of "Declined" — FleetCo rejecting a raw request
+/** Display-only split of terminal booking outcomes — FleetCo rejecting a raw request
  *  outright (no quotationId, never priced) reads as a different kind of "no"
  *  than a client declining an actual quotation, and the two are worth
  *  telling apart at a glance (capacity/fleet problem vs. a pricing one),
@@ -198,25 +226,43 @@ export function clientBookingStatusLabel(booking: Booking): string {
 // as a separate visible phase — see clientRentalStatusLabel above, which
 // folds Accepted into "Upcoming" alongside Assigned on the My Rentals side).
 // MyRentals.tsx's own local statuses list used to be the complement of this
-// one, kept in sync by hand; RENTAL_STATUSES below is now that complement,
-// computed rather than duplicated, so the two can never drift apart. Lives
+// one, kept in sync by hand; RENTAL_STATUSES below is now the non-terminal
+// rental portion of that complement, computed rather than duplicated, so the
+// two can never drift apart. Cancelled is intentionally handled by the
+// booking-level predicates below because its destination depends on where it
+// occurred in the lifecycle. Lives
 // here rather than in MyRequests.tsx (where it used to be defined) because
 // Sidebar.tsx and BookingDetail.tsx both need it too now, for the same
 // underlying question — a page component isn't the right place for two
 // other, unrelated files to import a shared constant from.
-export const REQUEST_STATUSES: BookingStatus[] = ["Requested", "Quoted", "Declined", "Cancelled"];
+export const REQUEST_STATUSES: BookingStatus[] = ["Requested", "Quoted", "Declined"];
 
-// The complement of REQUEST_STATUSES — everything from the moment a client
-// has nothing left to decide (Accepted) through to Closed. Derived rather
-// than a second hand-written list: the two together must always partition
-// every BookingStatus with no overlap or gap, and computing one from the
-// other is what actually guarantees that instead of just documenting it.
+// The non-terminal rental statuses — everything from the moment a client has
+// nothing left to decide (Accepted) through to Completed. Cancelled is not
+// included here because a cancelled booking needs its lifecycle origin to
+// decide whether it belongs to Requests or Rentals.
 // Ops's own All Requests / All Rentals split (AllRequests.tsx / AllRentals.tsx)
 // uses this directly, same partition as the client portal's My Requests / My
 // Rentals — one line drawn once, not two definitions of the same line.
 export const RENTAL_STATUSES: BookingStatus[] = ALL_BOOKING_STATUSES.filter(
-  (s) => !REQUEST_STATUSES.includes(s),
+  (s) => !REQUEST_STATUSES.includes(s) && s !== "Cancelled",
 );
+
+/** A cancelled booking before acceptance remains request history. Legacy
+ * cancelled records without origin metadata default here, preserving the
+ * prototype's existing placement until they are migrated. */
+export function isRequestBooking(booking: Booking): boolean {
+  if (booking.status === "Cancelled") {
+    return !booking.cancelledFromStatus || booking.cancelledFromStatus === "Requested" || booking.cancelledFromStatus === "Quoted";
+  }
+  return REQUEST_STATUSES.includes(booking.status);
+}
+
+/** A cancelled booking after acceptance remains rental history. */
+export function isRentalBooking(booking: Booking): boolean {
+  if (booking.status === "Cancelled") return !isRequestBooking(booking);
+  return RENTAL_STATUSES.includes(booking.status);
+}
 
 /** Which client-nav section a booking currently belongs to — used by the
  *  Sidebar (which of My Requests/My Rentals stays highlighted while viewing
@@ -226,8 +272,8 @@ export const RENTAL_STATUSES: BookingStatus[] = ALL_BOOKING_STATUSES.filter(
  *  than tracking which list a booking was actually opened from, so it's
  *  correct regardless of entry point — a cross-page link, a bookmark, a
  *  direct URL — not just a direct click from one of the two lists. */
-export function clientNavSection(status: BookingStatus): "requests" | "rentals" {
-  return REQUEST_STATUSES.includes(status) ? "requests" : "rentals";
+export function clientNavSection(booking: Booking): "requests" | "rentals" {
+  return isRequestBooking(booking) ? "requests" : "rentals";
 }
 
 // Same status-derived question as clientNavSection, just resolved all the
@@ -241,12 +287,12 @@ export function clientNavSection(status: BookingStatus): "requests" | "rentals" 
 export function bookingNavPath(bookingId: string | undefined, bookings: Booking[], portal: "client" | "ops" = "client"): string | undefined {
   const booking = bookingId ? bookings.find((b) => b.id === bookingId) : undefined;
   if (!booking) return undefined;
-  const isRequest = clientNavSection(booking.status) === "requests";
+  const isRequest = clientNavSection(booking) === "requests";
   if (portal === "ops") return isRequest ? "/ops/requests" : "/ops/rentals";
   return isRequest ? "/portal/requests" : "/portal/rentals";
 }
 
-export const mockBookings: Booking[] = [
+export const mockBookings: Booking[] = rebaseDemoDates<Booking[]>([
   {
     id: "BK-2026-0001", clientId: "CLI-001", requestedByName: "Pakawat Chuenjai",
     rentalType: "Ad hoc / Daily", vehicleClassRequested: "Van", quantity: 2,
@@ -258,7 +304,9 @@ export const mockBookings: Booking[] = [
   {
     id: "BK-2026-0002", clientId: "CLI-001", requestedByName: "Pakawat Chuenjai",
     rentalType: "Short term", vehicleClassRequested: "Pickup", quantity: 1,
-    startDate: "2026-08-20", endDate: "2026-08-27",
+    // Keep the demo's expired quotation actionable: its offer has lapsed,
+    // while the requested rental window is still far enough ahead to revise.
+    startDate: "2026-09-05", endDate: "2026-09-12",
     pickupLocation: "Bang Sue Distribution Center", jobNotes: "Campaign support, last-mile.",
     status: "Quoted", quotationId: "QT-2026-0001", isRecurringBilling: false,
     created: "2026-08-11 09:30", updated: "2026-08-12 10:00",
@@ -324,12 +372,13 @@ export const mockBookings: Booking[] = [
     rentalType: "Short term", vehicleClassRequested: "Pickup", quantity: 1,
     startDate: "2026-08-16", endDate: "2026-08-23",
     pickupLocation: "Bang Sue Distribution Center", jobNotes: "",
-    status: "Active", assignments: [{ vehicleId: "VEH-003", driverId: "DRV-003" }], quotationId: "QT-2026-0003",
+    status: "Completed", assignments: [{ vehicleId: "VEH-003", driverId: "DRV-003" }], quotationId: "QT-2026-0003",
     // Assignment happens strictly after the quotation is accepted — QT-2026-0003
     // was accepted 2026-08-10 11:00, so this can't land at the same instant.
     assignedAt: "2026-08-10 11:15",
+    startedAt: "2026-08-16 08:00", completedAt: "2026-08-23 17:00",
     invoiceId: "INV-2026-0008", isRecurringBilling: false,
-    created: "2026-08-08 09:00", updated: "2026-08-16 08:00",
+    created: "2026-08-08 09:00", updated: "2026-08-23 17:00",
   },
   {
     id: "BK-2026-0004", clientId: "CLI-001", requestedByName: "Naruemon Srisai",
@@ -337,7 +386,7 @@ export const mockBookings: Booking[] = [
     startDate: "2026-06-01", endDate: "2026-11-30",
     pickupLocation: "Chaeng Watthana", jobNotes: "Dedicated route, Nonthaburi loop.",
     status: "Active", assignments: [{ vehicleId: "VEH-005", driverId: "DRV-005" }], quotationId: "QT-2026-0004",
-    assignedAt: "2026-05-28 10:00",
+    assignedAt: "2026-05-28 10:00", startedAt: "2026-06-01 08:00",
     invoiceId: "INV-2026-0005", taxInvoiceId: "TI-2026-0002", isRecurringBilling: true,
     created: "2026-05-20 10:00", updated: "2026-07-15 08:00",
   },
@@ -346,9 +395,9 @@ export const mockBookings: Booking[] = [
     rentalType: "Ad hoc / Daily", vehicleClassRequested: "4-Wheel Truck", quantity: 1,
     startDate: "2026-08-14", endDate: "2026-08-14",
     pickupLocation: "Bang Na Distribution Hub", jobNotes: "Same-day overflow delivery.",
-    status: "Active", assignments: [{ vehicleId: "VEH-001", driverId: "DRV-001" }], quotationId: "QT-2026-0005",
+    status: "Completed", assignments: [{ vehicleId: "VEH-001", driverId: "DRV-001" }], quotationId: "QT-2026-0005",
     // After QT-2026-0005's own acceptance (2026-08-14 08:30), not before it.
-    assignedAt: "2026-08-14 08:45",
+    assignedAt: "2026-08-14 08:45", startedAt: "2026-08-14 09:00", completedAt: "2026-08-14 18:00",
     invoiceId: "INV-2026-0010", isRecurringBilling: false,
     created: "2026-08-13 16:40", updated: "2026-08-15 16:20",
   },
@@ -359,21 +408,21 @@ export const mockBookings: Booking[] = [
     pickupLocation: "Bang Sue Distribution Center", jobNotes: "",
     status: "Completed", assignments: [{ vehicleId: "VEH-007", driverId: "DRV-007" }], quotationId: "QT-2026-0006",
     // After QT-2026-0006's own acceptance (2026-07-26 10:00), not before it.
-    assignedAt: "2026-07-27 10:00",
+    assignedAt: "2026-07-27 10:00", startedAt: "2026-07-28 08:00", completedAt: "2026-08-04 17:00",
     invoiceId: "INV-2026-0009", isRecurringBilling: false,
     created: "2026-07-22 09:00", updated: "2026-08-13 11:00",
   },
   {
     id: "BK-2026-0008", clientId: "CLI-001", requestedByName: "Pakawat Chuenjai",
     rentalType: "Ad hoc / Daily", vehicleClassRequested: "Van", quantity: 1,
-    startDate: "2026-07-05", endDate: "2026-07-05",
+    startDate: "2026-07-07", endDate: "2026-07-07",
     pickupLocation: "Bangkok GPO, Charoen Krung Rd", jobNotes: "",
     // Rental itself is fully done; billing has already run ahead to Paid —
     // that progress lives entirely on INV-2026-0001's own status now, not
     // duplicated onto this field (see bookingStatus.ts's header comment).
     status: "Completed", assignments: [{ vehicleId: "VEH-002", driverId: "DRV-002" }], quotationId: "QT-2026-0007",
     // After QT-2026-0007's own acceptance (2026-07-06 09:15), not before it.
-    assignedAt: "2026-07-06 14:00",
+    assignedAt: "2026-07-06 14:00", startedAt: "2026-07-07 08:00", completedAt: "2026-07-07 18:00",
     invoiceId: "INV-2026-0001", isRecurringBilling: false,
     created: "2026-07-04 08:00", updated: "2026-07-07 09:00",
   },
@@ -385,7 +434,7 @@ export const mockBookings: Booking[] = [
     // See BK-2026-0008's own comment above — INV-2026-0002's status is Paid.
     status: "Completed", assignments: [{ vehicleId: "VEH-006", driverId: "DRV-006" }], quotationId: "QT-2026-0008",
     // After QT-2026-0008's own acceptance (2026-07-18 11:00), not before it.
-    assignedAt: "2026-07-19 09:00",
+    assignedAt: "2026-07-19 09:00", startedAt: "2026-07-20 08:00", completedAt: "2026-07-27 17:00",
     invoiceId: "INV-2026-0002", taxInvoiceId: "TI-2026-0004", isRecurringBilling: false,
     created: "2026-07-14 09:00", updated: "2026-08-05 14:00",
   },
@@ -398,7 +447,7 @@ export const mockBookings: Booking[] = [
     // BK-2026-0008's own comment above); nothing left on the billing side
     // either, but that's INV-2026-0003/TI-2026-0001's own status to carry.
     status: "Completed", assignments: [{ vehicleId: "VEH-004", driverId: "DRV-004" }], quotationId: "QT-2026-0009",
-    assignedAt: "2026-05-20 09:00",
+    assignedAt: "2026-05-20 09:00", startedAt: "2026-06-01 08:00", completedAt: "2026-06-28 17:00",
     invoiceId: "INV-2026-0003", taxInvoiceId: "TI-2026-0001", isRecurringBilling: false,
     created: "2026-05-15 09:00", updated: "2026-07-15 12:00",
   },
@@ -416,7 +465,8 @@ export const mockBookings: Booking[] = [
     rentalType: "Short term", vehicleClassRequested: "Pickup", quantity: 1,
     startDate: "2026-08-25", endDate: "2026-09-01",
     pickupLocation: "Bang Na Distribution Hub", jobNotes: "Project postponed internally.",
-    status: "Cancelled", isRecurringBilling: false,
+    status: "Cancelled", cancelledFromStatus: "Requested", cancelledBy: "client", cancelledAt: "2026-08-08 09:00",
+    cancellationReason: "Project postponed internally.", isRecurringBilling: false,
     created: "2026-08-07 11:00", updated: "2026-08-08 09:00",
   },
   // Another Cancelled example for Thailand Post. Cancelled straight from
@@ -429,17 +479,47 @@ export const mockBookings: Booking[] = [
     rentalType: "Short term", vehicleClassRequested: "Van", quantity: 1,
     startDate: "2026-09-05", endDate: "2026-09-12",
     pickupLocation: "Bang Sue Distribution Center", jobNotes: "Trade fair support run.",
-    status: "Cancelled", declineReason: "Event postponed by the organizer — no longer needed for these dates.",
+    status: "Cancelled", cancelledFromStatus: "Requested", cancelledBy: "client", cancelledAt: "2026-08-15 09:00",
+    cancellationReason: "Event postponed by the organizer — no longer needed for these dates.",
     isRecurringBilling: false,
     created: "2026-08-14 10:00", updated: "2026-08-15 09:00",
   },
+  // Rental-history cancellation examples — both had already moved past the
+  // quotation decision, so they belong in My Rentals rather than My Requests.
+  // The first was cancelled after assignment; the second was cancelled while
+  // FleetCo was preparing the rental but before a vehicle was assigned.
+  {
+    id: "BK-2026-0025", clientId: "CLI-001", requestedByName: "Pakawat Chuenjai",
+    rentalType: "Short term", vehicleClassRequested: "Pickup", quantity: 1,
+    startDate: "2026-09-16", endDate: "2026-09-23",
+    pickupLocation: "Bang Sue Distribution Center", jobNotes: "Regional overflow coverage.",
+    status: "Cancelled", assignments: [{ vehicleId: "VEH-003", driverId: "DRV-003" }], quotationId: "QT-2026-0019",
+    assignedAt: "2026-08-27 11:00",
+    cancelledFromStatus: "Assigned", cancelledBy: "client", cancelledAt: "2026-08-29 14:00",
+    cancellationReason: "Delivery volume was reduced after the client consolidated routes.",
+    isRecurringBilling: false,
+    created: "2026-08-24 09:15", updated: "2026-08-29 14:00",
+  },
+  {
+    id: "BK-2026-0026", clientId: "CLI-001", requestedByName: "Suphaporn Wongsa",
+    rentalType: "Medium term", vehicleClassRequested: "Van", quantity: 1,
+    startDate: "2026-09-29", endDate: "2026-10-20",
+    pickupLocation: "Chaeng Watthana", jobNotes: "Campaign support vehicle.",
+    status: "Cancelled", quotationId: "QT-2026-0020",
+    cancelledFromStatus: "Accepted", cancelledBy: "client", cancelledAt: "2026-08-30 10:00",
+    cancellationReason: "The campaign schedule changed and the vehicle was no longer required.",
+    isRecurringBilling: false,
+    created: "2026-08-26 10:30", updated: "2026-08-30 10:00",
+  },
   // quantity>1, fully assigned — each of the 2 trucks gets its own vehicle +
-  // driver (VEH-001/DRV-001 and VEH-006/DRV-006), not one pair shared or
+  // driver (VEH-001/DRV-001 and VEH-006/DRV-009), not one pair shared or
   // duplicated across both units. Both vehicles/drivers are genuinely free
   // for these dates against every other booking in this file (checked by
-  // hand against assignmentConflicts.ts's own rules — VEH-001/DRV-001's only
-  // other hold is BK-2026-0005, a single day in August; VEH-006/DRV-006's
-  // Active August booking ends before this September rental begins).
+  // hand against assignmentConflicts.ts's own rules — VEH-001/DRV-001's other
+  // holds are BK-2026-0005 (a single day in August, since completed) and
+  // BK-2026-0024 (31 Aug – 4 Sept, well clear of this September window);
+  // VEH-006/DRV-009's Active August booking ends before this September
+  // rental begins).
   {
     id: "BK-2026-0014", clientId: "CLI-001", requestedByName: "Pakawat Chuenjai",
     rentalType: "Short term", vehicleClassRequested: "4-Wheel Truck", quantity: 2,
@@ -448,7 +528,7 @@ export const mockBookings: Booking[] = [
     status: "Assigned",
     assignments: [
       { vehicleId: "VEH-001", driverId: "DRV-001" },
-      { vehicleId: "VEH-006", driverId: "DRV-006" },
+      { vehicleId: "VEH-006", driverId: "DRV-009" },
     ],
     quotationId: "QT-2026-0011",
     // Currently sitting AT "Assigned" — same "updated is still accurate"
@@ -456,6 +536,23 @@ export const mockBookings: Booking[] = [
     assignedAt: "2026-08-16 09:30",
     isRecurringBilling: false,
     created: "2026-08-14 09:00", updated: "2026-08-16 09:30",
+  },
+  // Short, near-term booking so there's always at least one Assigned
+  // booking whose start date has actually arrived — every other Assigned
+  // booking in this file (BK-2026-0014, BK-2026-0017) starts weeks out, so
+  // without this one there's no way to demo Start Rental actually firing
+  // without either editing dates or hitting the "started early" warning on
+  // purpose. Dates stay clear of BK-2026-0014 above (31 Aug – 4 Sept vs.
+  // 15–22 Sept) so VEH-001/DRV-001 aren't double-booked.
+  {
+    id: "BK-2026-0024", clientId: "CLI-001", requestedByName: "Suphaporn Wongsa",
+    rentalType: "Short term", vehicleClassRequested: "4-Wheel Truck", quantity: 1,
+    startDate: "2026-08-31", endDate: "2026-09-04",
+    pickupLocation: "Bang Na Distribution Hub", jobNotes: "Short relief run, city distribution.",
+    status: "Assigned", assignments: [{ vehicleId: "VEH-001", driverId: "DRV-001" }], quotationId: "QT-2026-0018",
+    assignedAt: "2026-08-29 09:00",
+    isRecurringBilling: false,
+    created: "2026-08-27 09:00", updated: "2026-08-29 09:00",
   },
   // Thailand Post's own "Rejected" example — FleetCo declining a raw request
   // outright, before ever pricing it (no quotationId), as opposed to
@@ -480,7 +577,7 @@ export const mockBookings: Booking[] = [
     rentalType: "Short term", vehicleClassRequested: "4-Wheel Truck", quantity: 1,
     startDate: "2026-08-01", endDate: "2026-08-31",
     pickupLocation: "Chaeng Watthana", jobNotes: "Regional distribution run.",
-    status: "Active", assignments: [{ vehicleId: "VEH-006", driverId: "DRV-006" }], quotationId: "QT-2026-0012",
+    status: "Active", assignments: [{ vehicleId: "VEH-006", driverId: "DRV-009" }], quotationId: "QT-2026-0012", startedAt: "2026-08-01 08:00",
     // After QT-2026-0012's own acceptance (2026-07-30 10:00), not before it.
     assignedAt: "2026-07-30 14:00",
     invoiceId: "INV-2026-0006", taxInvoiceId: "TI-2026-0003", isRecurringBilling: false,
@@ -508,4 +605,4 @@ export const mockBookings: Booking[] = [
     invoiceId: "INV-2026-0007", isRecurringBilling: true,
     created: "2026-08-08 09:00", updated: "2026-08-17 10:00",
   },
-];
+]);

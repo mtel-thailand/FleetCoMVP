@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Button } from "@/app/components/ui/Button";
 import { Calendar, Search, Download, Plus, ChevronDown, Loader2 } from "lucide-react";
 import { FilterDropdown } from "./FilterDropdown";
 import { Calendar as DayCalendar } from "./calendar";
@@ -6,6 +7,7 @@ import { format } from "date-fns";
 import { toast } from "sonner";
 import type { DateRange } from "react-day-picker";
 import { SHOW_EXPORTS } from "@/app/lib/featureFlags";
+import { formatUiDate, translate, useI18n } from "@/app/i18n";
 
 const periodOptions = ["All time", "Today", "Last 7 days", "Last 30 days", "This month", "Custom range"];
 
@@ -47,38 +49,30 @@ function DateRangePopover({
   onCancel: () => void;
   initialRange?: DateRange;
 }) {
+  const { language } = useI18n();
   const [range, setRange] = useState<DateRange | undefined>(initialRange);
 
   return (
-    <div className="absolute top-full left-0 mt-1 z-50 bg-white border border-slate-200 rounded-2xl shadow-xl p-4 w-72">
+    <div className="absolute top-full left-0 mt-1 z-50 w-80 max-w-[calc(100vw-2rem)] rounded-2xl border border-slate-200 bg-white p-3 shadow-xl">
       <DayCalendar
         mode="range"
         selected={range}
         onSelect={setRange}
         numberOfMonths={1}
         classNames={{
-          months: "flex flex-col gap-2",
-          month: "flex flex-col gap-3",
-          caption: "flex justify-center relative items-center",
-          caption_label: "text-xs font-semibold text-slate-800",
-          nav: "flex items-center gap-1",
-          nav_button:
-            "inline-flex items-center justify-center w-7 h-7 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-700 transition-colors disabled:opacity-30",
-          nav_button_previous: "absolute left-0",
-          nav_button_next: "absolute right-0",
           table: "w-full border-collapse",
           head_row: "grid grid-cols-7",
           head_cell: "text-slate-400 text-center text-[10px] font-semibold py-1",
           row: "grid grid-cols-7 mt-0.5",
-          cell: "relative p-0 text-center [&:has([aria-selected])]:bg-[var(--portal-accent-light)] first:[&:has([aria-selected])]:rounded-l-lg last:[&:has([aria-selected])]:rounded-r-lg [&:has(>.day-range-start)]:rounded-l-lg [&:has(>.day-range-end)]:rounded-r-lg",
-          day: "h-8 w-full flex items-center justify-center rounded-lg text-[11px] font-medium text-slate-700 hover:bg-slate-100 aria-selected:opacity-100 transition-colors",
-          day_range_start: "day-range-start bg-[var(--portal-accent)] text-white hover:!bg-[var(--portal-accent-hover)] rounded-lg shadow-sm",
-          day_range_end: "day-range-end bg-[var(--portal-accent)] text-white hover:!bg-[var(--portal-accent-hover)] rounded-lg shadow-sm",
+          cell: "calendar-range-cell relative p-0 text-center",
+          day: "mx-auto flex size-8 min-w-8 max-w-8 items-center justify-center rounded-lg text-[11px] font-medium text-slate-700 hover:bg-slate-100 aria-selected:opacity-100 transition-colors",
+          day_range_start: "calendar-range-start day-range-start relative z-10 !size-8 !min-w-8 !max-w-8 bg-[var(--portal-accent)] text-white hover:!bg-[var(--portal-accent-hover)] rounded-lg shadow-sm",
+          day_range_end: "calendar-range-end day-range-end relative z-10 !size-8 !min-w-8 !max-w-8 bg-[var(--portal-accent)] text-white hover:!bg-[var(--portal-accent-hover)] rounded-lg shadow-sm",
           day_selected: "bg-[var(--portal-accent)] text-white hover:bg-[var(--portal-accent)]",
           day_today: "text-[var(--portal-accent)] bg-[var(--portal-accent-light)] hover:bg-[var(--portal-accent-light-2)] font-semibold",
           day_outside: "!text-[#CAD5E2] aria-selected:!text-[#CAD5E2]",
           day_disabled: "text-slate-300 opacity-40 cursor-not-allowed",
-          day_range_middle: "aria-selected:bg-[var(--portal-accent-light)] aria-selected:text-slate-700 rounded-none",
+          day_range_middle: "calendar-range-middle day-range-middle relative z-10 aria-selected:bg-[var(--portal-accent-light)] aria-selected:text-slate-700 rounded-none",
           day_hidden: "invisible",
         }}
       />
@@ -86,13 +80,13 @@ function DateRangePopover({
         <span className="text-xs text-slate-500 leading-relaxed">
           {range?.from && range?.to ? (
             <>
-              {format(range.from, "d MMM yyyy")} –{" "}
+              {formatUiDate(format(range.from, "yyyy-MM-dd"), false)} –{" "}
               <br />
-              {format(range.to, "d MMM yyyy")}
+              {formatUiDate(format(range.to, "yyyy-MM-dd"), false)}
             </>
           ) : range?.from ? (
             <>
-              {format(range.from, "d MMM yyyy")} –{" "}
+              {formatUiDate(format(range.from, "yyyy-MM-dd"), false)} –{" "}
               <br />
               pick end date
             </>
@@ -101,13 +95,12 @@ function DateRangePopover({
           )}
         </span>
         <div className="flex gap-2">
-          <button
+          <Button variant="outline" size="sm"
             type="button"
             onClick={onCancel}
-            className="px-3 py-1.5 text-xs text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 cursor-pointer"
           >
             Cancel
-          </button>
+          </Button>
           <button
             type="button"
             disabled={!range?.from || !range?.to}
@@ -126,7 +119,7 @@ export function FilterBar({
   showSearch = true,
   searchPlaceholder = "Search",
   searchableFields,
-  showPeriod = true,
+  showPeriod = false,
   showCreate = false,
   createLabel = "Create",
   createDisabled = false,
@@ -141,6 +134,7 @@ export function FilterBar({
   extraFilters,
   trailing,
 }: FilterBarProps) {
+  const { language } = useI18n();
   const [period, setPeriod] = useState("All time");
   const [search, setSearch] = useState(defaultSearch);
   const [focused, setFocused] = useState(false);
@@ -181,7 +175,7 @@ export function FilterBar({
       try {
         if (type === "csv") onExportCSV?.();
         else onExportXLSX?.();
-        toast.success("Export ready — downloading...");
+        toast.success(translate("Export ready — downloading..."));
       } finally {
         setTimeout(() => setExporting(false), 600);
       }
@@ -200,7 +194,7 @@ export function FilterBar({
 
   const handleApply = (range: DateRange) => {
     setAppliedRange(range);
-    const label = `${format(range.from!, "d MMM")} – ${format(range.to!, "d MMM")}`;
+    const label = `${new Intl.DateTimeFormat(language === "th" ? "th-TH" : "en-GB", { day: "numeric", month: "short" }).format(range.from!)} – ${new Intl.DateTimeFormat(language === "th" ? "th-TH" : "en-GB", { day: "numeric", month: "short" }).format(range.to!)}`;
     setPeriod(label);
     setShowDatePicker(false);
     onPeriodChange?.(`custom:${range.from!.toISOString()}|${range.to!.toISOString()}`);
@@ -305,14 +299,13 @@ export function FilterBar({
           </div>
         )}
         {showCreate && (
-          <button
+          <Button variant="primary" size="sm"
             onClick={onCreate}
             disabled={createDisabled}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-[var(--portal-accent)] text-white rounded-lg text-xs hover:bg-[var(--portal-accent-hover)] cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <Plus size={13} />
             {createLabel}
-          </button>
+          </Button>
         )}
         {trailing}
       </div>

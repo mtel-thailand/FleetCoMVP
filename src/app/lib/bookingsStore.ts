@@ -10,14 +10,40 @@
 // for one shared array.
 import { useEffect, useState } from "react";
 import { mockBookings, type Booking } from "@/app/data/bookings";
+import { mockQuotations } from "@/app/data/quotations";
 import { loadPersisted, mergeSeedRecords, savePersisted, scopeToThailandPost, subscribePersisted } from "@/app/lib/persistence";
+import { demoNowStamp } from "@/app/data/demoDates";
 
 type Listener = () => void;
+
+const QUOTATION_REQUIRED_STATUSES = new Set<Booking["status"]>(["Accepted", "Assigned", "Active", "Completed"]);
+
+// A previous demo seed accidentally added BK-2026-0024 directly as Assigned
+// without its quotation pointer. Repair only this invariant when loading
+// persisted demo data; unrelated user edits remain untouched.
+function repairBookingRecord(booking: Booking): Booking {
+  if (booking.id === "BK-2026-0008" && booking.startDate === "2026-07-05" && booking.endDate === "2026-07-05") {
+    return {
+      ...booking,
+      startDate: "2026-07-07",
+      endDate: "2026-07-07",
+      startedAt: booking.startedAt === "2026-07-05 08:00" ? "2026-07-07 08:00" : booking.startedAt,
+      completedAt: booking.completedAt === "2026-07-05 18:00" ? "2026-07-07 18:00" : booking.completedAt,
+    };
+  }
+  if (!booking.quotationId && QUOTATION_REQUIRED_STATUSES.has(booking.status)) {
+    const acceptedQuotation = mockQuotations.find(
+      (quotation) => quotation.bookingId === booking.id && quotation.status === "Accepted",
+    );
+    if (acceptedQuotation) return { ...booking, quotationId: acceptedQuotation.id };
+  }
+  return booking;
+}
 
 function scopeBookings(records: Booking[]): Booking[] {
   return scopeToThailandPost(records).map((booking) =>
     booking.requestedByName === "Ekapop Meesuk" ? { ...booking, requestedByName: "Suphaporn Wongsa" } : booking,
-  );
+  ).map(repairBookingRecord);
 }
 
 let bookings: Booking[] = scopeBookings(mergeSeedRecords(loadPersisted("bookings", [...mockBookings]), mockBookings));
@@ -50,15 +76,16 @@ export function updateBooking(id: string, patch: Partial<Booking>) {
 }
 
 export function nextBookingId(): string {
+  const year = new Date().getFullYear();
   const nums = bookings
     .map((b) => parseInt(b.id.split("-").pop() ?? "", 10))
     .filter((n) => !isNaN(n));
   const next = (nums.length ? Math.max(...nums) : 0) + 1;
-  return `BK-2026-${String(next).padStart(4, "0")}`;
+  return `BK-${year}-${String(next).padStart(4, "0")}`;
 }
 
 export function nowStamp(): string {
-  return new Date().toISOString().slice(0, 16).replace("T", " ");
+  return demoNowStamp();
 }
 
 /** Demo-only: restores this store to its seeded state. See resetDemoData.ts. */

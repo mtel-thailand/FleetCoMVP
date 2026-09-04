@@ -41,7 +41,6 @@ export function AuditLog() {
       <FilterBar
         showSearch
         searchableFields={["Actor", "Entity ID", "Detail"]}
-        showPeriod
         showExport
         exportDisabled={sorted.length === 0}
         onExportCSV={() => exportCSV(HEADERS, sorted.map(csvRow), `audit-log-${exportDateTag()}.csv`)}

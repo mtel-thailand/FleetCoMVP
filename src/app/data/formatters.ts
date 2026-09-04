@@ -1,5 +1,7 @@
+import { formatUiNumber } from "@/app/i18n";
+
 export const formatCurrency = (amount: number): string => {
-  return "฿" + amount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return "฿" + formatUiNumber(amount, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 };
 
 export const formatCurrencyExport = (amount: number): string => {
@@ -15,5 +17,5 @@ export const formatTHBString = (s: string): string => {
 };
 
 export const formatNumber = (num: number): string => {
-  return new Intl.NumberFormat("en-US").format(num);
+  return formatUiNumber(num);
 };

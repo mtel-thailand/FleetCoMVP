@@ -1,10 +1,13 @@
-import { useState } from "react";
-import { FileText, XCircle, Flag, Repeat2, Truck, Hash, Calendar, MapPin } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Button } from "@/app/components/ui/Button";
+import { Textarea } from "@/app/components/ui/Input";
+import { Label } from "@/app/components/ui/Label";
+import { FileText, XCircle, Flag, Repeat2, Truck, Hash, Calendar, MapPin, MoreHorizontal } from "lucide-react";
 import type { Booking } from "@/app/data/bookings";
-import { bookingInvoices, bookingQuotations, clientBookingStatusLabel, bookingTaxInvoices, REQUEST_STATUSES } from "@/app/data/bookings";
+import { bookingInvoices, bookingQuotations, clientBookingStatusLabel, bookingTaxInvoices, isRequestBooking } from "@/app/data/bookings";
 import type { Vehicle } from "@/app/data/vehicles";
 import type { Driver } from "@/app/data/drivers";
-import type { Quotation } from "@/app/data/quotations";
+import { isQuotationExpired, type Quotation } from "@/app/data/quotations";
 import type { Invoice } from "@/app/data/invoices";
 import type { TaxInvoice } from "@/app/data/taxInvoices";
 import { SHOW_ISSUE_REPORTS, type IssueCategory } from "@/app/data/issueReports";
@@ -17,14 +20,19 @@ import { FormSelect } from "@/app/components/ui/FormSelect";
 import { formatDate } from "@/app/components/ui/utils";
 import { getAdminRole } from "@/app/lib/auth";
 import { updateBooking } from "@/app/lib/bookingsStore";
+import { transitionVehicleStatuses } from "@/app/lib/vehiclesStore";
 import { useIssueReports, addIssueReport, nextIssueReportId } from "@/app/lib/issueReportsStore";
+import { addNotification } from "@/app/lib/notificationsStore";
+import { ActionModal } from "@/app/components/ui/ActionModal";
 import { useOpenQuotation, useOpenInvoice, useOpenTaxInvoice } from "@/app/lib/documentNav";
+import { toastError, toastSuccess } from "@/app/lib/toast";
+import { demoNowStamp } from "@/app/data/demoDates";
 
 const ISSUE_CATEGORIES: IssueCategory[] = ["Vehicle", "Driver", "Schedule", "Billing", "Other"];
 
-// These actions are intentionally paused while the client booking workflow is
-// being finalized. Keeping the underlying handlers intact makes them simple
-// to restore when the policy is ready.
+// Repeat and issue reporting remain optional utilities while the client
+// booking workflow is finalized. Cancellation is kept available because it
+// is a real booking lifecycle transition and must release reserved vehicles.
 const SHOW_BOOKING_UTILITY_ACTIONS = false;
 
 // Shared read/act surface for a single booking, rendered at the routed
@@ -70,7 +78,7 @@ const SHOW_BOOKING_UTILITY_ACTIONS = false;
 // every level — no bespoke onBack/onClose pair to keep in sync.
 
 function nowStamp() {
-  return new Date().toISOString().slice(0, 16).replace("T", " ");
+  return demoNowStamp();
 }
 
 // Just the label/value box a couple of sections below reuse — pulled out so
@@ -115,7 +123,7 @@ function RentalDetailsContent({ booking, wide = false }: { booking: Booking; wid
         />
         <StatTile icon={Truck} label="Vehicle Class" value={booking.vehicleClassRequested} />
         <StatTile icon={Hash} label="Quantity" value={String(booking.quantity)} />
-        <StatTile icon={MapPin} label="Branch Location" value={booking.pickupLocation} />
+        <StatTile icon={MapPin} label="Delivery Site" value={booking.pickupLocation} />
       </div>
       {booking.jobNotes && (
         <div className="mt-4 border-t border-slate-100 pt-4">
@@ -157,23 +165,22 @@ function IssueReportForm({ onCancel, onConfirm }: { onCancel: () => void; onConf
   return (
     <div className="bg-slate-50 rounded-xl p-4 space-y-3">
       <div>
-        <label className="text-xs font-medium text-slate-600 block mb-1">Category</label>
+        <Label>Category</Label>
         <FormSelect value={category} options={ISSUE_CATEGORIES} onChange={setCategory} />
       </div>
       <div>
-        <label className="text-xs font-medium text-slate-600 block mb-1">What's happening?</label>
-        <textarea
+        <Label>What's happening?</Label>
+        <Textarea
           rows={3}
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           placeholder="Describe the issue — the more detail, the faster FleetCo can act on it..."
-          className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-[var(--portal-accent)] resize-none"
         />
       </div>
       <div className="flex gap-2">
-        <button onClick={onCancel} className="flex-1 py-2 border border-slate-200 rounded-lg text-xs text-slate-600 hover:bg-white cursor-pointer">
+        <Button variant="outline" size="md" className="flex-1 px-0 py-2" onClick={onCancel}>
           Back
-        </button>
+        </Button>
         <button
           disabled={!description.trim()}
           onClick={() => onConfirm(category, description.trim())}
@@ -207,7 +214,21 @@ export function ClientBookingDetail({
   const openInvoice = useOpenInvoice();
   const openTaxInvoice = useOpenTaxInvoice();
   const [showCancel, setShowCancel] = useState(false);
+  const [showBookingActions, setShowBookingActions] = useState(false);
+  const bookingActionsRef = useRef<HTMLDivElement | null>(null);
   const [showReportIssue, setShowReportIssue] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!showBookingActions) return;
+    function handleOutsideClick(event: MouseEvent) {
+      if (bookingActionsRef.current && !bookingActionsRef.current.contains(event.target as Node)) {
+        setShowBookingActions(false);
+      }
+    }
+    document.addEventListener("mousedown", handleOutsideClick);
+    return () => document.removeEventListener("mousedown", handleOutsideClick);
+  }, [showBookingActions]);
 
   // Reverse lookups, not booking.quotationId/invoiceId/taxInvoiceId — a
   // recurring-billing booking can have more than one invoice over its life
@@ -225,6 +246,7 @@ export function ClientBookingDetail({
   const clientTaxInvoices = bookingTaxInvoices(booking.id, taxInvoices);
   const quotation = clientQuotations[0];
   const invoice = clientInvoices[0];
+  const expiredQuotation = booking.status === "Quoted" && !!quotation && isQuotationExpired(quotation);
   const hasDocuments = clientQuotations.length > 0 || clientInvoices.length > 0 || clientTaxInvoices.length > 0;
 
   // Brief §2: accepting quotations is the Approver's job, not the
@@ -275,7 +297,46 @@ export function ClientBookingDetail({
     .filter((rows) => rows.length > 0);
 
   function handleCancelBooking(reason: string) {
-    updateBooking(booking.id, { status: "Cancelled", declineReason: reason || undefined, updated: nowStamp() });
+    try {
+      transitionVehicleStatuses(
+        [...new Set((booking.assignments ?? []).map((assignment) => assignment.vehicleId))],
+        {
+          toStatus: "Available",
+          source: "booking",
+          bookingId: booking.id,
+          actingUser: role ?? "Client Portal",
+          reason: "Booking cancelled",
+        },
+      );
+    } catch (error) {
+      setCancelError(error instanceof Error ? error.message : "Unable to release the assigned vehicle.");
+      toastError("Could not cancel {id}.", { id: booking.id });
+      return;
+    }
+    const stamp = nowStamp();
+    updateBooking(booking.id, {
+      status: "Cancelled",
+      cancelledFromStatus: booking.status,
+      cancelledBy: "client",
+      cancelledAt: stamp,
+      cancellationReason: reason || undefined,
+      updated: stamp,
+    });
+    setCancelError(null);
+    setShowCancel(false);
+    // The one live trigger for booking_cancelled (see that event type's
+    // catalog comment in notifications.ts) — declining a quotation fires
+    // quotation_decided instead (deliberately reclassified, per NTF-003's
+    // own comment there), so this event type is specifically "a booking
+    // that was already under way got withdrawn," not any negative outcome.
+    addNotification({
+      eventTypeId: "booking_cancelled",
+      portal: "fleetco",
+      recipient: "FleetCo Operations",
+      bookingId: booking.id,
+      message: `${booking.id} was cancelled by the client${reason ? `: ${reason}` : "."}`,
+    });
+    toastSuccess("Booking {id} cancelled.", { id: booking.id });
   }
   function handleReportIssue(category: IssueCategory, description: string) {
     addIssueReport({
@@ -289,6 +350,7 @@ export function ClientBookingDetail({
       status: "Open",
     });
     setShowReportIssue(false);
+    toastSuccess("Issue report submitted.");
   }
 
   // Split three ways, not one combined "Next Step" blob:
@@ -316,8 +378,10 @@ export function ClientBookingDetail({
   // explanation remain together at the top of this page.
   let headerAction: React.ReactNode = null;
   let actionArea: React.ReactNode = null;
-  let cancelAction: React.ReactNode = null;
-  if (booking.declineReason) {
+  const outcomeReason = booking.status === "Cancelled"
+    ? booking.cancellationReason ?? booking.declineReason
+    : booking.declineReason;
+  if (outcomeReason) {
     // Same Rejected/Declined/Cancelled split (and the exact wording) the
     // sidebar card used — just re-homed, plus a tone pulled from
     // StatusBadge's own color for that label so the banner agrees with the
@@ -325,85 +389,54 @@ export function ClientBookingDetail({
     // Rejected, rose for Declined, slate for Cancelled).
     const declineLabel = clientBookingStatusLabel(booking);
     const tone =
-      declineLabel === "Cancelled" ? "bg-slate-50 border-slate-100 text-slate-500"
+      booking.status === "Cancelled" ? "bg-slate-50 border-slate-100 text-slate-500"
       : declineLabel === "Rejected" ? "bg-orange-50 border-orange-100 text-orange-700"
       : "bg-rose-50 border-rose-100 text-rose-700"; // Declined
-    const lead = declineLabel === "Cancelled" ? "Cancellation reason: " : declineLabel === "Rejected" ? "Rejection reason: " : "Decline reason: ";
+    const lead = booking.status === "Cancelled" ? "Cancellation reason: " : declineLabel === "Rejected" ? "Rejection reason: " : "Decline reason: ";
     actionArea = (
       <div className={`border rounded-lg px-3 py-2.5 text-xs leading-relaxed ${tone}`}>
         <span className="font-semibold">{lead}</span>
-        {booking.declineReason}
+        {outcomeReason}
       </div>
     );
   } else if (booking.status === "Requested") {
     actionArea = <InfoBanner tone="amber">Waiting on FleetCo to prepare and issue the quotation.</InfoBanner>;
-  } else if (booking.status === "Quoted" && quotation?.status === "Issued") {
+  } else if (booking.status === "Quoted" && quotation?.status === "Issued" && !isQuotationExpired(quotation)) {
     // No inline Accept/Decline here — see the file header comment. Offered
     // to every role; QuotationDetail decides for itself who gets the actual
     // buttons versus a read-only "awaiting a decision" view.
     headerAction = (
-      <button
+      <Button variant="primary" size="toolbar" className="shrink-0"
         onClick={() => openQuotation(quotation.id)}
-        className="flex items-center gap-1.5 h-8 px-3 bg-[var(--portal-accent)] text-white rounded-lg text-xs font-medium hover:bg-[var(--portal-accent-hover)] cursor-pointer shrink-0"
       >
         <FileText size={13} /> View Quotation
-      </button>
+      </Button>
     );
+  } else if (booking.status === "Quoted" && quotation?.status === "Issued" && isQuotationExpired(quotation)) {
+    actionArea = <InfoBanner tone="amber">This quotation has expired. FleetCo must issue a revised quotation before it can be accepted.</InfoBanner>;
   } else if (invoice && (invoice.status === "Unpaid" || invoice.status === "Overdue" || invoice.status === "Payment Issue")) {
     // Driven by the invoice's own status, not booking.status === "Invoiced"
     // — a recurring-billing booking sits at "Active" between cycles, but
     // can still have a real unpaid invoice sitting there needing payment.
     // Gating this on the booking's status would hide that entirely.
     headerAction = (
-      <button
+      <Button variant="primary" size="toolbar" className="shrink-0"
         onClick={() => openInvoice(invoice.id, booking.id)}
-        className="flex items-center gap-1.5 h-8 px-3 bg-[var(--portal-accent)] text-white rounded-lg text-xs font-medium hover:bg-[var(--portal-accent-hover)] cursor-pointer shrink-0"
       >
         <FileText size={13} /> View Invoice
-      </button>
+      </Button>
     );
   } else if (invoice && invoice.status === "Payment Submitted") {
     headerAction = (
-      <button
+      <Button variant="primary" size="toolbar" className="shrink-0"
         onClick={() => openInvoice(invoice.id, booking.id)}
-        className="flex items-center gap-1.5 h-8 px-3 bg-[var(--portal-accent)] text-white rounded-lg text-xs font-medium hover:bg-[var(--portal-accent-hover)] cursor-pointer shrink-0"
       >
         <FileText size={13} /> View Invoice
-      </button>
+      </Button>
     );
-  } else if (SHOW_BOOKING_UTILITY_ACTIONS && cancellable) {
-    // Cancelling doesn't get the header treatment the other three do — it's
-    // not FleetCo waiting on a decision the way a quotation or an overdue
-    // invoice is, it's an always-there option the client might reach for.
-    // Same low-key tier as "Repeat this request," so it sits right next to
-    // it (see cancelAction below) instead of next to the title, where a
-    // destructive action would also sit uncomfortably close.
-    if (canCancel) {
-      if (showCancel) {
-        cancelAction = (
-          <ReasonForm
-            title="Reason for cancelling (optional)"
-            placeholder="Let FleetCo know why you're cancelling this booking..."
-            confirmLabel="Confirm Cancellation"
-            required={false}
-            onCancel={() => setShowCancel(false)}
-            onConfirm={handleCancelBooking}
-          />
-        );
-      } else {
-        cancelAction = (
-          <button
-            onClick={() => setShowCancel(true)}
-            className="w-full py-2.5 border border-rose-200 text-rose-600 rounded-lg text-xs font-medium hover:bg-rose-50 flex items-center justify-center gap-1.5 cursor-pointer"
-          >
-            <XCircle size={13} /> Cancel Booking
-          </button>
-        );
-      }
-    } else {
-      cancelAction = <p className="text-xs text-slate-500 bg-slate-50 rounded-lg px-3 py-2.5">Nothing to do right now — FleetCo will update this booking as it progresses.</p>;
-    }
   }
+
+  const canShowBookingActions = cancellable && canCancel;
 
   const timeline = buildRentalTimeline(booking, clientQuotations);
 
@@ -418,11 +451,39 @@ export function ClientBookingDetail({
         <div>
           <div className="flex items-center gap-3 flex-wrap">
             <h1 className="text-lg font-semibold text-slate-900">{booking.id}</h1>
-            <StatusBadge status={clientBookingStatusLabel(booking)} />
+            <StatusBadge status={expiredQuotation ? "Expired" : clientBookingStatusLabel(booking)} />
           </div>
           <p className="text-xs text-slate-500 mt-1">Requested by {booking.requestedByName} · {formatDate(booking.created)}</p>
         </div>
-        {headerAction}
+        {(headerAction || canShowBookingActions) && (
+          <div className="flex items-start gap-2 shrink-0">
+            {headerAction}
+            {canShowBookingActions && (
+              <div ref={bookingActionsRef} className="relative shrink-0">
+                <button
+                  type="button"
+                  aria-label="Booking actions"
+                  aria-expanded={showBookingActions}
+                  onClick={() => setShowBookingActions((visible) => !visible)}
+                  className="flex h-8 w-8 items-center justify-center rounded-lg p-1.5 text-slate-400 hover:bg-white hover:text-slate-700 cursor-pointer"
+                >
+                  <MoreHorizontal size={17} />
+                </button>
+                {showBookingActions && (
+                  <div className="absolute right-0 top-full z-10 mt-1 w-44 rounded-lg border border-slate-200 bg-white p-1 shadow-lg">
+                    <button
+                      type="button"
+                      onClick={() => { setShowBookingActions(false); setShowCancel(true); }}
+                      className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs text-rose-600 hover:bg-rose-50 cursor-pointer"
+                    >
+                      <XCircle size={13} /> {booking.status === "Requested" ? "Cancelled Request" : "Cancelled Rental"}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* actionArea used to also repeat at the very bottom of the page —
@@ -431,7 +492,7 @@ export function ClientBookingDetail({
           this session happened to set it. Renders once now. */}
       {actionArea && <div className="mb-5">{actionArea}</div>}
 
-      {booking.status === "Requested" || (REQUEST_STATUSES.includes(booking.status) && !hasDocuments) ? (
+      {booking.status === "Requested" || (isRequestBooking(booking) && !hasDocuments) ? (
         <div className="rounded-xl border border-slate-200 bg-white p-5">
           <RentalDetailsContent booking={booking} wide />
           <div className="mt-4 border-t border-slate-100 pt-4">
@@ -478,7 +539,7 @@ export function ClientBookingDetail({
                 invoices={clientInvoices}
                 taxInvoices={clientTaxInvoices}
                 onOpenTaxInvoice={openTaxInvoice}
-                expectingInvoice={!REQUEST_STATUSES.includes(booking.status)}
+                expectingInvoice={!isRequestBooking(booking) && booking.status !== "Cancelled"}
               />
             </div>
           )}
@@ -487,7 +548,7 @@ export function ClientBookingDetail({
               other operational/supporting cards in the right column. The
               card remains visible before allocation so Accepted bookings
               explain that FleetCo is still preparing the vehicle and driver. */}
-          {!REQUEST_STATUSES.includes(booking.status) && (
+          {!isRequestBooking(booking) && (
             <AssignedVehicleCard assignmentUnits={assignmentUnits} />
           )}
 
@@ -529,25 +590,31 @@ export function ClientBookingDetail({
             </div>
           )}
 
-          {/* Tighter gap between these two than the space-y-5 rhythm above
-              — Cancel and Repeat are both low-key, always-there utility
-              actions that belong together as one small cluster, not two
-              independent sections. */}
-          {SHOW_BOOKING_UTILITY_ACTIONS && (cancelAction || onRepeat) && (
+          {SHOW_BOOKING_UTILITY_ACTIONS && onRepeat && (
             <div className="space-y-2">
-              {cancelAction}
-              {onRepeat && (
-                <button
-                  onClick={onRepeat}
-                  className="w-full py-2.5 border border-slate-200 rounded-lg text-xs font-medium text-slate-600 hover:bg-slate-50 flex items-center justify-center gap-1.5 cursor-pointer"
-                >
-                  <Repeat2 size={13} /> Repeat this request
-                </button>
-              )}
+              <Button variant="outline" size="lg" onClick={onRepeat}>
+                <Repeat2 size={13} /> Repeat this request
+              </Button>
             </div>
           )}
         </div>
       </div>
+      )}
+
+      {showCancel && (
+        <ActionModal title="Cancel Booking" subtitle={booking.id} onClose={() => { setCancelError(null); setShowCancel(false); }}>
+          <div className="space-y-2">
+            {cancelError && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">{cancelError}</div>}
+            <ReasonForm
+              title="Reason for cancelling (optional)"
+              placeholder="Let FleetCo know why you're cancelling this booking..."
+              confirmLabel="Confirm Cancellation"
+              required={false}
+              onCancel={() => { setCancelError(null); setShowCancel(false); }}
+              onConfirm={handleCancelBooking}
+            />
+          </div>
+        </ActionModal>
       )}
     </div>
   );

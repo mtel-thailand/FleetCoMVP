@@ -5,6 +5,7 @@
 // a real build would generate the full amortization schedule from the loan
 // terms (baseCost, financedAmount, interestRatePct, termMonths) with a pure
 // function rather than storing 60+ hand-authored rows per vehicle.
+import { rebaseDemoDates } from "./demoDates";
 
 export type FinancingCoverage = "Covered" | "At Risk" | "Not Covered";
 
@@ -49,7 +50,7 @@ export type FinancingRecord = {
   updated: string;
 };
 
-export const mockFinancingRecords: FinancingRecord[] = [
+export const mockFinancingRecords: FinancingRecord[] = rebaseDemoDates<FinancingRecord[]>([
   {
     id: "FIN-001", vehicleId: "VEH-001", lender: "Kasikornbank Hire-Purchase", contractNumber: "KBHP-2023-00841",
     baseCost: 850000, downPayment: 170000, financedAmount: 680000, interestRatePct: 4.5, totalInterest: 76500,
@@ -134,4 +135,4 @@ export const mockFinancingRecords: FinancingRecord[] = [
     ],
     created: "2024-06-01 10:00", updated: "2026-08-01 09:00",
   },
-];
+]);

@@ -1,16 +1,18 @@
 import type { Booking } from "@/app/data/bookings";
 import type { ClientAccount } from "@/app/data/clients";
+import { getTaxBranch } from "@/app/data/clients";
 import type { Invoice } from "@/app/data/invoices";
 import type { TaxInvoice } from "@/app/data/taxInvoices";
 import { getAdminRole, ROLE_LABELS } from "@/app/lib/auth";
 import { updateBooking } from "@/app/lib/bookingsStore";
 import { updateInvoice } from "@/app/lib/invoicesStore";
 import { addNotification } from "@/app/lib/notificationsStore";
-import { addTaxInvoice } from "@/app/lib/taxInvoicesStore";
+import { addTaxInvoice, getTaxInvoices } from "@/app/lib/taxInvoicesStore";
 import { thaiBahtText } from "@/app/lib/thaiBahtText";
+import { demoNowStamp } from "@/app/data/demoDates";
 
 export function nowStamp(): string {
-  return new Date().toISOString().slice(0, 16).replace("T", " ");
+  return demoNowStamp();
 }
 
 export function computeTaxInvoiceAmounts(invoice: Invoice) {
@@ -42,19 +44,20 @@ export function buildTaxInvoiceRecord({
 }): TaxInvoice {
   const amounts = computeTaxInvoiceAmounts(invoice);
   const role = getAdminRole();
+  const taxBranch = getTaxBranch(client, booking.taxBranchId);
 
   return {
     id: docNumber,
     invoiceId: invoice.id,
     bookingId: booking.id,
     clientId: booking.clientId,
-    sellerName: "FleetCo Operations Co., Ltd. (entity name pending)",
-    sellerTaxId: "0000000000000",
-    sellerAddress: "Registered address pending — FleetCo entity not yet finalized.",
+    sellerName: "FleetCo Operations Co., Ltd.",
+    sellerTaxId: "0105568123456",
+    sellerAddress: "99 Ratchadaphisek Rd, Huai Khwang, Bangkok 10310, Thailand",
     buyerName: client?.name ?? invoice.clientId,
     buyerTaxId: client?.taxId ?? "",
-    buyerAddress: client?.registeredAddress ?? "",
-    buyerBranch: client?.branch ?? "",
+    buyerAddress: taxBranch?.addressEn ?? client?.registeredAddress ?? "",
+    buyerBranch: taxBranch ? `${taxBranch.code} · ${taxBranch.isHeadOffice ? "Head Office" : taxBranch.legalNameEn}` : client?.branch ?? "",
     lineItems: invoice.lineItems?.map((item) => ({ ...item })),
     subtotal: amounts.subtotal,
     discount: amounts.discount,
@@ -82,6 +85,12 @@ export function verifyPaymentAndIssueTaxInvoice({
   client: ClientAccount | undefined;
   docNumber: string;
 }): TaxInvoice {
+  const existingTaxInvoice = getTaxInvoices().find((taxInvoice) => taxInvoice.invoiceId === invoice.id);
+  if (existingTaxInvoice) return existingTaxInvoice;
+  if (invoice.status !== "Payment Submitted") {
+    throw new Error("Only submitted payments can be verified.");
+  }
+
   const stamp = nowStamp();
   const taxInvoice = buildTaxInvoiceRecord({ invoice, booking, client, docNumber, stamp });
 

@@ -1,4 +1,8 @@
 import { useState } from "react";
+import { Button } from "@/app/components/ui/Button";
+import { Input } from "@/app/components/ui/Input";
+import { Label } from "@/app/components/ui/Label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/app/components/ui/select";
 import { Calculator, CheckCircle2 } from "lucide-react";
 import { computeFinancingProjection } from "@/app/lib/financingCalc";
 import { addFinancingRecord } from "@/app/lib/financingStore";
@@ -7,6 +11,8 @@ import { StatusBadge } from "@/app/components/ui/StatusBadge";
 import { formatCurrency } from "@/app/data/formatters";
 import type { FinancingRecord } from "@/app/data/financing";
 import { toast } from "sonner";
+import { translate } from "@/app/i18n";
+import { demoNowStamp, demoToday } from "@/app/data/demoDates";
 
 // brief §7.4: "Acquisition simulator (pre-purchase): before committing to
 // the bank, model a candidate vehicle — enter base cost, financing terms,
@@ -15,7 +21,7 @@ import { toast } from "sonner";
 // data-backed decision."
 
 function nowStamp() {
-  return new Date().toISOString().slice(0, 16).replace("T", " ");
+  return demoNowStamp();
 }
 
 function Field({ label, value, onChange, suffix, step }: {
@@ -23,14 +29,13 @@ function Field({ label, value, onChange, suffix, step }: {
 }) {
   return (
     <div>
-      <label className="text-xs font-medium text-slate-600 block mb-1">{label}</label>
+      <Label>{label}</Label>
       <div className="relative">
-        <input
+        <Input className="pr-12"
           type="number"
           value={value}
           step={step ?? 1}
           onChange={(e) => onChange(Number(e.target.value))}
-          className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[var(--portal-accent)] pr-12"
         />
         {suffix && <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] text-slate-400">{suffix}</span>}
       </div>
@@ -66,15 +71,15 @@ export function AcquisitionSimulator() {
       id, vehicleId: targetVehicleId, lender: "TBD — pending bank approval", contractNumber: "Pending",
       baseCost, downPayment, financedAmount: projection.financedAmount, interestRatePct, totalInterest: projection.totalInterest,
       insuranceAnnual, registrationFees, termMonths, monthlyInstallment: projection.monthlyInstallment,
-      startDate: new Date().toISOString().slice(0, 10), installmentsPaid: 0, outstandingPrincipal: projection.financedAmount,
-      nextPaymentDate: new Date().toISOString().slice(0, 10), monthlyRevenueAvg: expectedMonthlyRevenue,
+      startDate: demoToday(), installmentsPaid: 0, outstandingPrincipal: projection.financedAmount,
+      nextPaymentDate: demoToday(), monthlyRevenueAvg: expectedMonthlyRevenue,
       coverage: projection.coverage, cumulativeMarginRecovered: 0, allInCost: projection.allInCost,
       roiMonthsEstimate: projection.roiMonths, paymentSchedule: [], created: nowStamp(), updated: nowStamp(),
     };
     addFinancingRecord(record);
     updateVehicle(targetVehicleId, { financed: true, updated: nowStamp() });
     setCommitted(true);
-    toast.success(`Financing record ${id} created — see it in Portfolio.`);
+    toast.success(translate("Financing record {id} created — see it in Portfolio.", { id }));
   }
 
   const coverageTone: Record<string, string> = {
@@ -88,13 +93,20 @@ export function AcquisitionSimulator() {
         <div>
           <h3 className="text-sm font-semibold text-slate-900 mb-1">Candidate Vehicle</h3>
           <p className="text-xs text-slate-400 mb-3">Model a purchase before committing to the bank.</p>
-          <select value={targetVehicleId} onChange={(e) => { setTargetVehicleId(e.target.value); setCommitted(false); }}
-            className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[var(--portal-accent)]">
-            {candidateVehicles.length === 0 && <option value="">No unfinanced vehicles in fleet</option>}
-            {candidateVehicles.map((v) => (
-              <option key={v.id} value={v.id}>{v.plateNumber} · {v.brand} {v.model} ({v.vehicleClass})</option>
-            ))}
-          </select>
+          <Select
+            value={targetVehicleId || undefined}
+            onValueChange={(value) => { setTargetVehicleId(value); setCommitted(false); }}
+            disabled={candidateVehicles.length === 0}
+          >
+            <SelectTrigger className="h-9 w-full rounded-lg border-slate-200 bg-white text-xs focus-visible:ring-2 focus-visible:ring-[var(--portal-accent)]">
+              <SelectValue placeholder="No unfinanced vehicles in fleet" />
+            </SelectTrigger>
+            <SelectContent>
+              {candidateVehicles.map((v) => (
+                <SelectItem key={v.id} value={v.id} className="text-xs">{v.plateNumber} · {v.brand} {v.model} ({v.vehicleClass})</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         <div>
@@ -170,7 +182,7 @@ export function AcquisitionSimulator() {
         <div className="bg-slate-50 rounded-xl p-4 text-center">
           <p className="text-xs text-slate-500">Break-Even Timeline</p>
           <p className="text-lg font-semibold text-slate-900 mt-1">
-            {projection.roiMonths === null ? "Not on track at this rate" : `~${projection.roiMonths} months`}
+            {projection.roiMonths === null ? "Not on track at this rate" : translate("~{count} months", { count: projection.roiMonths })}
           </p>
           <p className="text-[11px] text-slate-400 mt-1">
             {projection.roiMonths === null
@@ -185,13 +197,12 @@ export function AcquisitionSimulator() {
               <CheckCircle2 size={14} /> Committed — see Financing Portfolio
             </div>
           ) : (
-            <button
+            <Button variant="primary" size="lg"
               disabled={!targetVehicleId}
               onClick={handleCommit}
-              className="w-full py-2.5 bg-[var(--portal-accent)] text-white rounded-lg text-xs font-medium hover:bg-[var(--portal-accent-hover)] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
             >
               Commit to Financing
-            </button>
+            </Button>
           )}
         </div>
       </div>

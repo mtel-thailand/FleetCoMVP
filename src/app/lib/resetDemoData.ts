@@ -13,7 +13,7 @@ import { resetQuotations } from "./quotationsStore";
 import { resetInvoices } from "./invoicesStore";
 import { resetTaxInvoices } from "./taxInvoicesStore";
 import { resetIssueReports } from "./issueReportsStore";
-import { resetNotifications } from "./notificationsStore";
+import { resetNotifications, resetNotificationPreferences } from "./notificationsStore";
 import { clearAllListState } from "@/app/hooks/usePersistentListState";
 import { clearAllDrafts } from "@/app/lib/documentDrafts";
 
@@ -27,6 +27,7 @@ export function resetAllDemoData(): void {
   resetTaxInvoices();
   resetIssueReports();
   resetNotifications();
+  resetNotificationPreferences();
   // A stale tab/search/sort selection referencing data that just got wiped
   // back to seed would be a strange thing to leave sitting there — reset
   // means reset, not "reset everything except whatever I happened to be

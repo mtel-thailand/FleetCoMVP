@@ -33,6 +33,7 @@ export default defineConfig({
     alias: {
       // Alias @ to the src directory
       '@': path.resolve(__dirname, './src'),
+      '@fleetco/i18n': path.resolve(__dirname, './src/app/i18n'),
     },
   },
 

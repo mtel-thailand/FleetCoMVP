@@ -1,6 +1,11 @@
-import { useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import { useEffect, useState } from "react";
+import * as Popover from "@radix-ui/react-popover";
+import { Modal, ModalTitle } from "@/app/components/ui/Modal";
+import { Button } from "@/app/components/ui/Button";
+import { Input } from "@/app/components/ui/Input";
+import { Label } from "@/app/components/ui/Label";
 import { toast } from "sonner";
+import { formatUiDate, translate } from "@/app/i18n";
 import { format } from "date-fns";
 import type { DateRange } from "react-day-picker";
 import { Send, X, Calendar, ChevronDown, Clock, Phone, MapPin } from "lucide-react";
@@ -11,7 +16,6 @@ import { getAdminRole } from "@/app/lib/auth";
 import { addBooking, getBookings, nextBookingId, nowStamp } from "@/app/lib/bookingsStore";
 import { addNotification } from "@/app/lib/notificationsStore";
 import { useClients } from "@/app/lib/clientsStore";
-import { useBodyScrollLock } from "@/app/hooks/useBodyScrollLock";
 import { Calendar as DayCalendar } from "@/app/components/ui/calendar";
 import { formatDate } from "@/app/components/ui/utils";
 
@@ -63,6 +67,7 @@ type DraftBooking = {
   startDate: string;
   endDate: string;
   pickupLocation: string;
+  taxBranchId: string;
   jobNotes: string;
 };
 
@@ -72,88 +77,9 @@ const emptyDraft: DraftBooking = {
   startDate: "",
   endDate: "",
   pickupLocation: "",
+  taxBranchId: "",
   jobNotes: "",
 };
-
-// Portals a popover's content to document.body and positions it with
-// fixed coordinates measured from the trigger, instead of a plain CSS
-// `absolute` box nested inside the trigger's own wrapper. That matters here
-// specifically because both consumers below sit inside this modal's
-// scrollable content area (`overflow-y-auto`) — a plain absolute popover
-// gets clipped by that container's boundary the moment it's taller than the
-// space left below the trigger. Escaping via a portal + `position: fixed`
-// sidesteps the clipping entirely, at the cost of needing to track the
-// trigger's position by hand (recomputed on open, and on any scroll —
-// capture-phase, since the scroll that moves the trigger is the modal's own
-// inner content div, not the window). Flips to open upward when there
-// isn't room below and there's more room above, so it also can't run off
-// the bottom of the viewport on a short screen.
-function PopoverPortal({ open, onClose, triggerRef, estimatedHeight, matchTriggerWidth, children }: {
-  open: boolean;
-  onClose: () => void;
-  triggerRef: React.RefObject<HTMLElement | null>;
-  estimatedHeight: number;
-  matchTriggerWidth?: boolean;
-  children: React.ReactNode;
-}) {
-  const contentRef = useRef<HTMLDivElement>(null);
-  const [style, setStyle] = useState<React.CSSProperties | null>(null);
-
-  useEffect(() => {
-    if (!open || !triggerRef.current) return;
-    function update() {
-      const rect = triggerRef.current!.getBoundingClientRect();
-      const spaceBelow = window.innerHeight - rect.bottom;
-      const openUpward = spaceBelow < estimatedHeight && rect.top > spaceBelow;
-      setStyle({
-        position: "fixed",
-        left: rect.left,
-        zIndex: 60,
-        ...(matchTriggerWidth ? { width: rect.width } : {}),
-        ...(openUpward ? { bottom: window.innerHeight - rect.top + 4 } : { top: rect.bottom + 4 }),
-      });
-    }
-    update();
-    window.addEventListener("scroll", update, true);
-    window.addEventListener("resize", update);
-    return () => {
-      window.removeEventListener("scroll", update, true);
-      window.removeEventListener("resize", update);
-    };
-  }, [open, triggerRef, estimatedHeight, matchTriggerWidth]);
-
-  // Outside-click-to-close has to check both the trigger AND this portaled
-  // content — they're no longer DOM neighbors once rendered via portal, so a
-  // click inside the popover would otherwise look "outside" the trigger and
-  // close itself immediately.
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: MouseEvent) => {
-      const target = e.target as Node;
-      if (triggerRef.current?.contains(target) || contentRef.current?.contains(target)) return;
-      onClose();
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [open, triggerRef, onClose]);
-
-  // data-portal="client" here isn't decorative — it's re-establishing the
-  // burgundy accent scope. [data-portal="client"] in theme.css is what
-  // overrides --portal-accent away from the FleetCo-blue default, and this
-  // content is portaled straight to document.body, landing as a *sibling*
-  // of Layout.tsx's own data-portal div rather than a descendant of it.
-  // CSS custom properties only inherit down the DOM tree, not across
-  // siblings, so without this the calendar and location picker would
-  // silently fall back to blue — same root cause as the login page's
-  // RoleModal bug, different component.
-  if (!open || !style) return null;
-  return createPortal(
-    <div ref={contentRef} style={style} data-portal="client">
-      {children}
-    </div>,
-    document.body,
-  );
-}
 
 // One combined range field instead of two separate date inputs — reuses the
 // same Calendar-in-range-mode pattern (and the same classNames, so it looks
@@ -161,14 +87,25 @@ function PopoverPortal({ open, onClose, triggerRef, estimatedHeight, matchTrigge
 // FilterBar.tsx. Also matches that one now: picking dates only edits a local
 // draft, and nothing reaches the actual form (onChangeStart/onChangeEnd)
 // until Apply — closing over an incomplete or accidental click used to
-// silently commit it. Cancel (and clicking outside, which routes through the
-// same handler) discards the draft and reverts the trigger to whatever was
-// last actually applied.
+// silently commit it. Cancel (and clicking outside / Escape, which route
+// through the same onOpenChange) discards the draft and reverts the trigger
+// to whatever was last actually applied.
+//
+// Built on Radix Popover rather than a hand-rolled createPortal + manual
+// outside-click listener (which this used to be, alongside a sibling Picker
+// below sharing the same approach). That matters specifically because this
+// whole form sits inside this app's Radix `Modal` (a Dialog): a hand-rolled
+// portal is invisible to Dialog's dismissable-layer stack, so Dialog's own
+// outside-pointer handling would swallow clicks on the calendar before the
+// day's own onSelect ever fired — the popover looked open but nothing was
+// selectable. Radix Popover registers on the same dismissable-layer stack
+// Dialog uses, so Dialog correctly leaves its clicks alone. It also gets
+// correct collision-aware positioning (flips above the trigger, escapes this
+// modal's `overflow-y-auto` scroll clipping) for free.
 function DateRangeField({ startDate, endDate, onChangeStart, onChangeEnd }: {
   startDate: string; endDate: string; onChangeStart: (v: string) => void; onChangeEnd: (v: string) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const triggerRef = useRef<HTMLDivElement>(null);
 
   const range: DateRange | undefined = startDate
     ? { from: new Date(startDate + "T00:00:00"), to: endDate ? new Date(endDate + "T00:00:00") : undefined }
@@ -176,13 +113,13 @@ function DateRangeField({ startDate, endDate, onChangeStart, onChangeEnd }: {
 
   const [draft, setDraft] = useState<DateRange | undefined>(range);
 
-  function openPicker() {
+  // Fires on every open-state change Radix initiates itself — opening the
+  // trigger, Escape, or an outside click — so re-seeding the draft here
+  // covers both "just opened" (start from what's actually applied) and
+  // "closed without Apply" (discard edits) in one place.
+  function handleOpenChange(next: boolean) {
     setDraft(range);
-    setOpen(true);
-  }
-  function handleCancel() {
-    setDraft(range);
-    setOpen(false);
+    setOpen(next);
   }
   function handleApply() {
     if (!draft?.from || !draft?.to) return;
@@ -195,26 +132,41 @@ function DateRangeField({ startDate, endDate, onChangeStart, onChangeEnd }: {
   const hint = !draft?.from ? "Pick a start date" : !draft?.to ? "Pick an end date" : `${draftDays} day${draftDays === 1 ? "" : "s"} selected`;
 
   return (
-    <div className="relative" ref={triggerRef}>
-      <button
-        type="button"
-        onClick={() => (open ? handleCancel() : openPicker())}
-        className={`w-full flex items-center gap-2 border rounded-lg px-3 py-2 text-xs text-left bg-white hover:border-slate-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--portal-accent)] cursor-pointer ${
-          open ? "border-[var(--portal-accent)]" : "border-slate-200"
-        }`}
-      >
-        <Calendar size={13} className="text-slate-400 shrink-0" />
-        {range?.from ? (
-          <span className="text-slate-800">
-            {format(range.from, "d MMM yyyy")} – {range.to ? format(range.to, "d MMM yyyy") : <span className="text-slate-400">pick end date</span>}
-          </span>
-        ) : (
-          <span className="text-slate-400">Select dates</span>
-        )}
-      </button>
-
-      <PopoverPortal open={open} onClose={handleCancel} triggerRef={triggerRef} estimatedHeight={410}>
-        <div className="bg-white border border-slate-200 rounded-2xl shadow-xl p-4 w-72">
+    <Popover.Root open={open} onOpenChange={handleOpenChange}>
+      <Popover.Trigger asChild>
+        <button
+          type="button"
+          className={`w-full flex items-center gap-2 border rounded-lg px-3 py-2 text-xs text-left bg-white hover:border-slate-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--portal-accent)] cursor-pointer ${
+            open ? "border-[var(--portal-accent)]" : "border-slate-200"
+          }`}
+        >
+          <Calendar size={13} className="text-slate-400 shrink-0" />
+          {range?.from ? (
+            <span className="text-slate-800">
+              {formatUiDate(format(range.from, "yyyy-MM-dd"), false)} – {range.to ? formatUiDate(format(range.to, "yyyy-MM-dd"), false) : <span className="text-slate-400">pick end date</span>}
+            </span>
+          ) : (
+            <span className="text-slate-400">Select dates</span>
+          )}
+        </button>
+      </Popover.Trigger>
+      <Popover.Portal>
+        {/* data-portal="client" here isn't decorative — it's re-establishing
+            the burgundy accent scope. [data-portal="client"] in theme.css is
+            what overrides --portal-accent away from the FleetCo-blue
+            default, and Radix Popover.Content portals straight to
+            document.body, landing as a *sibling* of Layout.tsx's own
+            data-portal div rather than a descendant of it. CSS custom
+            properties only inherit down the DOM tree, not across siblings,
+            so without this the calendar would silently fall back to blue —
+            same root cause as the login page's RoleModal bug, different
+            component. */}
+        <Popover.Content
+          data-portal="client"
+          align="start"
+          sideOffset={4}
+          className="z-[60] w-80 max-w-[calc(100vw-2rem)] rounded-2xl border border-slate-200 bg-white p-3 shadow-xl"
+        >
           <DayCalendar
             mode="range"
             selected={draft}
@@ -222,89 +174,84 @@ function DateRangeField({ startDate, endDate, onChangeStart, onChangeEnd }: {
             defaultMonth={draft?.from ?? new Date()}
             numberOfMonths={1}
             classNames={{
-              months: "flex flex-col gap-2",
-              month: "flex flex-col gap-3",
-              caption: "flex justify-center relative items-center",
-              caption_label: "text-xs font-semibold text-slate-800",
-              nav: "flex items-center gap-1",
-              nav_button:
-                "inline-flex items-center justify-center w-7 h-7 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-700 transition-colors disabled:opacity-30",
-              nav_button_previous: "absolute left-0",
-              nav_button_next: "absolute right-0",
               table: "w-full border-collapse",
               head_row: "grid grid-cols-7",
               head_cell: "text-slate-400 text-center text-[10px] font-semibold py-1",
               row: "grid grid-cols-7 mt-0.5",
-              cell: "relative p-0 text-center [&:has([aria-selected])]:bg-[var(--portal-accent-light)] first:[&:has([aria-selected])]:rounded-l-lg last:[&:has([aria-selected])]:rounded-r-lg [&:has(>.day-range-start)]:rounded-l-lg [&:has(>.day-range-end)]:rounded-r-lg",
-              day: "h-8 w-full flex items-center justify-center rounded-lg text-[11px] font-medium text-slate-700 hover:bg-slate-100 aria-selected:opacity-100 transition-colors",
-              day_range_start: "day-range-start bg-[var(--portal-accent)] text-white hover:!bg-[var(--portal-accent-hover)] rounded-lg shadow-sm",
-              day_range_end: "day-range-end bg-[var(--portal-accent)] text-white hover:!bg-[var(--portal-accent-hover)] rounded-lg shadow-sm",
+              cell: "calendar-range-cell relative p-0 text-center",
+              day: "mx-auto flex size-8 min-w-8 max-w-8 items-center justify-center rounded-lg text-[11px] font-medium text-slate-700 hover:bg-slate-100 aria-selected:opacity-100 transition-colors",
+              day_range_start: "calendar-range-start day-range-start relative z-10 !size-8 !min-w-8 !max-w-8 bg-[var(--portal-accent)] text-white hover:!bg-[var(--portal-accent-hover)] rounded-lg shadow-sm",
+              day_range_end: "calendar-range-end day-range-end relative z-10 !size-8 !min-w-8 !max-w-8 bg-[var(--portal-accent)] text-white hover:!bg-[var(--portal-accent-hover)] rounded-lg shadow-sm",
               day_selected: "bg-[var(--portal-accent)] text-white hover:bg-[var(--portal-accent)]",
               day_today: "text-[var(--portal-accent)] bg-[var(--portal-accent-light)] hover:bg-[var(--portal-accent-light-2)] font-semibold",
               day_outside: "!text-[#CAD5E2] aria-selected:!text-[#CAD5E2]",
               day_disabled: "text-slate-300 opacity-40 cursor-not-allowed",
-              day_range_middle: "aria-selected:bg-[var(--portal-accent-light)] aria-selected:text-slate-700 rounded-none",
+              day_range_middle: "calendar-range-middle day-range-middle relative z-10 aria-selected:bg-[var(--portal-accent-light)] aria-selected:text-slate-700 rounded-none",
               day_hidden: "invisible",
             }}
           />
           <div className="flex items-center justify-between gap-3 mt-3 pt-3 border-t border-slate-100">
             <span className="text-[11px] text-slate-500">{hint}</span>
             <div className="flex gap-2">
-              <button
+              <Button variant="outline" size="sm"
                 type="button"
-                onClick={handleCancel}
-                className="px-3 py-1.5 rounded-lg text-xs font-medium text-slate-600 border border-slate-200 hover:bg-slate-50 cursor-pointer"
+                onClick={() => handleOpenChange(false)}
               >
                 Cancel
-              </button>
-              <button
+              </Button>
+              <Button variant="primary" size="sm"
                 type="button"
                 onClick={handleApply}
                 disabled={!draft?.from || !draft?.to}
-                className="px-3 py-1.5 rounded-lg text-xs font-medium text-white bg-[var(--portal-accent)] hover:bg-[var(--portal-accent-hover)] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
               >
                 Apply
-              </button>
+              </Button>
             </div>
           </div>
-        </div>
-      </PopoverPortal>
-    </div>
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
   );
 }
 
 // Generic dropdown-from-a-fixed-list picker — originally built just for
-// branch location (picking from the client's known locations instead of
+// delivery location (picking from the client's known locations instead of
 // free text, so what FleetCo sees stays consistent), now shared with
 // vehicle type too: both are "choose one of a short known list," and this
-// keeps that one interaction pattern (and its PopoverPortal escape-the-
-// scroll-container plumbing) written once instead of twice. Generic over
-// `T extends string` rather than hardcoding `string` so callers with a
+// keeps that one interaction pattern written once instead of twice. Generic
+// over `T extends string` rather than hardcoding `string` so callers with a
 // literal union (VehicleClass) get the option list and onChange back
-// narrowed to that union, no `as` cast needed at the call site.
+// narrowed to that union, no `as` cast needed at the call site. Built on
+// Radix Popover for the same reason DateRangeField above is — see its
+// comment.
 function Picker<T extends string>({ value, options, onChange, placeholder }: {
   value: T | ""; options: T[]; onChange: (v: T) => void; placeholder: string;
 }) {
   const [open, setOpen] = useState(false);
-  const triggerRef = useRef<HTMLDivElement>(null);
 
   return (
-    <div className="relative" ref={triggerRef}>
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        className={`w-full flex items-center justify-between gap-2 border rounded-lg px-3 py-2 text-xs text-left bg-white hover:border-slate-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--portal-accent)] cursor-pointer ${
-          open ? "border-[var(--portal-accent)]" : "border-slate-200"
-        }`}
-      >
-        <span className={value ? "text-slate-800" : "text-slate-400"}>
-          {value || placeholder}
-        </span>
-        <ChevronDown size={13} className={`text-slate-400 shrink-0 transition-transform duration-150 ${open ? "rotate-180" : ""}`} />
-      </button>
-
-      <PopoverPortal open={open} onClose={() => setOpen(false)} triggerRef={triggerRef} estimatedHeight={244} matchTriggerWidth>
-        <div className="max-h-60 overflow-y-auto bg-white border border-slate-200 rounded-lg shadow-lg">
+    <Popover.Root open={open} onOpenChange={setOpen}>
+      <Popover.Trigger asChild>
+        <button
+          type="button"
+          className={`w-full flex items-center justify-between gap-2 border rounded-lg px-3 py-2 text-xs text-left bg-white hover:border-slate-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--portal-accent)] cursor-pointer ${
+            open ? "border-[var(--portal-accent)]" : "border-slate-200"
+          }`}
+        >
+          <span className={value ? "text-slate-800" : "text-slate-400"}>
+            {value || placeholder}
+          </span>
+          <ChevronDown size={13} className={`text-slate-400 shrink-0 transition-transform duration-150 ${open ? "rotate-180" : ""}`} />
+        </button>
+      </Popover.Trigger>
+      <Popover.Portal>
+        {/* data-portal="client" — see the identical note in DateRangeField above. */}
+        <Popover.Content
+          data-portal="client"
+          align="start"
+          sideOffset={4}
+          className="z-[60] w-[var(--radix-popover-trigger-width)] max-h-60 overflow-y-auto bg-white border border-slate-200 rounded-lg shadow-lg"
+        >
           {options.map((opt) => (
             <button
               key={opt}
@@ -317,9 +264,9 @@ function Picker<T extends string>({ value, options, onChange, placeholder }: {
               {opt}
             </button>
           ))}
-        </div>
-      </PopoverPortal>
-    </div>
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
   );
 }
 
@@ -340,12 +287,12 @@ function Picker<T extends string>({ value, options, onChange, placeholder }: {
 // a plain info line under Rental dates; branch phone/address show the same
 // way under Branch location once one's picked — see both below.
 export function RequestVehicle({ onClose }: { onClose: () => void }) {
-  useBodyScrollLock();
   const client = useClients().find((c) => c.id === CLIENT_ID) ?? staticClient;
   const rateCardClasses = [...new Set(client.rateCard.map((r) => r.vehicleClass))] as VehicleClass[];
-  const branches = client.branches ?? [];
+  const deliveryLocations = client.branches ?? [];
+  const taxBranches = client.orgBranches.filter((branch) => branch.status === "Active");
   const [draft, setDraft] = useState<DraftBooking>(emptyDraft);
-  const selectedBranch = branches.find((b) => b.name === draft.pickupLocation);
+  const selectedDeliveryLocation = deliveryLocations.find((location) => location.name === draft.pickupLocation);
 
   useEffect(() => {
     const repeatId = sessionStorage.getItem("repeatBookingId");
@@ -359,10 +306,11 @@ export function RequestVehicle({ onClose }: { onClose: () => void }) {
         startDate: "",
         endDate: "",
         pickupLocation: source.pickupLocation,
+        taxBranchId: source.taxBranchId ?? "",
         jobNotes: source.jobNotes,
       });
     }
-  }, []);
+  }, [client]);
 
   // No end date yet? Default to the start date — a same-day request
   // shouldn't make the client type the same date twice.
@@ -371,7 +319,7 @@ export function RequestVehicle({ onClose }: { onClose: () => void }) {
   const rentalType = days !== null ? deriveRentalType(days) : null;
 
   const canSubmit =
-    draft.vehicleClass !== "" && draft.startDate && effectiveEndDate && draft.pickupLocation.trim().length > 0 && draft.quantity > 0 && effectiveEndDate >= draft.startDate;
+    draft.vehicleClass !== "" && draft.startDate && effectiveEndDate && draft.pickupLocation.trim().length > 0 && draft.taxBranchId && draft.quantity > 0 && effectiveEndDate >= draft.startDate;
 
   function set<K extends keyof DraftBooking>(key: K, value: DraftBooking[K]) {
     setDraft((d) => ({ ...d, [key]: value }));
@@ -398,6 +346,7 @@ export function RequestVehicle({ onClose }: { onClose: () => void }) {
       startDate: draft.startDate,
       endDate: effectiveEndDate,
       pickupLocation: draft.pickupLocation.trim(),
+      taxBranchId: draft.taxBranchId,
       jobNotes: draft.jobNotes.trim(),
       status: "Requested",
       isRecurringBilling: rentalType === "Long term",
@@ -417,28 +366,15 @@ export function RequestVehicle({ onClose }: { onClose: () => void }) {
     // client's already looking at the list this booking just landed on
     // (bookingsStore is reactive), so there's nothing the old success
     // screen showed that isn't already visible the moment the modal's gone.
-    toast.success(`Request ${id} submitted — you'll see a quotation in your inbox once it's issued.`);
+    toast.success(translate("Request {id} submitted — you'll see a quotation in your inbox once it's issued.", { id }));
     onClose();
   }
 
   return (
-    <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={onClose}>
-      {/* sm:max-w-4xl used to fit a Request Summary panel that sat beside
-          this form — once that panel was removed, the form became a
-          single-column stack (Vehicle type, Quantity, Rental dates, Branch
-          location, Job notes) with nothing left to justify that width, just
-          a lot of empty margin on either side. max-w-md (the size every
-          other compact form modal in this app uses — DeclineModal in
-          QuotationDetail.tsx, MarkPaidModal in InvoiceDetail.tsx) read a
-          little tight for this form specifically, so this one sits a step
-          up at max-w-xl instead. */}
-      <div
-        className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-xl shadow-xl max-h-[90vh] sm:min-h-[65vh] flex flex-col"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <Modal onClose={onClose} overlayClassName="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4" contentClassName="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-xl shadow-xl max-h-[90vh] sm:min-h-[65vh] flex flex-col" overlayProps={{ "data-portal": "client" }}>
         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 shrink-0">
-          <h3 className="text-sm font-semibold text-slate-900">Request a Vehicle</h3>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 cursor-pointer"><X size={18} /></button>
+          <ModalTitle asChild><h3 className="text-sm font-semibold text-slate-900">Request a Vehicle</h3></ModalTitle>
+          <Button variant="close" size="icon" onClick={onClose} aria-label="Close request form"><X size={18} /></Button>
         </div>
 
         <div className="flex-1 overflow-y-auto p-5 flex flex-col">
@@ -453,12 +389,12 @@ export function RequestVehicle({ onClose }: { onClose: () => void }) {
           <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
             <div className="flex flex-col gap-4 flex-1">
                 <div>
-                  <label className="text-xs font-medium text-slate-600 block mb-1">Vehicle type</label>
+                  <Label>Vehicle type</Label>
                   <Picker value={draft.vehicleClass} options={rateCardClasses} onChange={(v) => set("vehicleClass", v)} placeholder="Select a vehicle type" />
                 </div>
 
                 <div>
-                  <label className="text-xs font-medium text-slate-600 block mb-1">Quantity</label>
+                  <Label>Quantity</Label>
                   {/* 999 is a fat-finger guard, not a claimed fleet limit — the
                       fleet itself only has a handful of vehicles per class.
                       FleetCo's quotation is where a request actually gets
@@ -472,7 +408,7 @@ export function RequestVehicle({ onClose }: { onClose: () => void }) {
                       are enforced in the onChange clamp below already, not
                       by browser-native number-input validation, so nothing
                       here actually depended on the HTML attributes. */}
-                  <input
+                  <Input
                     type="text"
                     inputMode="numeric"
                     pattern="[0-9]*"
@@ -480,12 +416,11 @@ export function RequestVehicle({ onClose }: { onClose: () => void }) {
                     value={draft.quantity}
                     onChange={(e) => set("quantity", Math.min(999, Math.max(1, Number(e.target.value.replace(/\D/g, "")) || 1)))}
                     onFocus={(e) => e.target.select()}
-                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-[var(--portal-accent)]"
                   />
                 </div>
 
                 <div>
-                  <label className="text-xs font-medium text-slate-600 block mb-1">Rental dates</label>
+                  <Label>Rental dates</Label>
                   <DateRangeField
                     startDate={draft.startDate}
                     endDate={draft.endDate}
@@ -506,22 +441,35 @@ export function RequestVehicle({ onClose }: { onClose: () => void }) {
                 </div>
 
                 <div>
-                  <label className="text-xs font-medium text-slate-600 block mb-1">Branch location</label>
-                  <Picker value={draft.pickupLocation} options={branches.map((b) => b.name)} onChange={(v) => set("pickupLocation", v)} placeholder="Select a branch location" />
-                  {selectedBranch && (selectedBranch.phone || selectedBranch.address) && (
+                      <Label>Delivery site</Label>
+                  <Picker value={draft.pickupLocation} options={deliveryLocations.map((location) => location.name)} onChange={(v) => set("pickupLocation", v)} placeholder="Select a delivery site" />
+                  {selectedDeliveryLocation && (selectedDeliveryLocation.phone || selectedDeliveryLocation.address) && (
                     <div className="text-[11px] text-slate-400 mt-1.5 flex flex-col gap-1">
                       {/* Phone and address are two different kinds of fact
                           glued together with a middle dot before — split
                           into their own icon-led lines now instead, since a
                           single icon can't honestly represent both at once. */}
-                      {selectedBranch.phone && (
-                        <span className="flex items-center gap-1"><Phone size={11} className="text-slate-300 shrink-0" />{selectedBranch.phone}</span>
+                      {selectedDeliveryLocation.phone && (
+                        <span className="flex items-center gap-1"><Phone size={11} className="text-slate-300 shrink-0" />{selectedDeliveryLocation.phone}</span>
                       )}
-                      {selectedBranch.address && (
-                        <span className="flex items-center gap-1"><MapPin size={11} className="text-slate-300 shrink-0" />{selectedBranch.address}</span>
+                      {selectedDeliveryLocation.address && (
+                        <span className="flex items-center gap-1"><MapPin size={11} className="text-slate-300 shrink-0" />{selectedDeliveryLocation.address}</span>
                       )}
                     </div>
                   )}
+                </div>
+
+                <div>
+                  <Label>Tax registration branch</Label>
+                  <Picker
+                    value={(() => {
+                      const branch = taxBranches.find((candidate) => candidate.id === draft.taxBranchId);
+                      return branch ? `${branch.code} · ${branch.isHeadOffice ? "Head Office" : branch.legalNameEn}` : "";
+                    })()}
+                    options={taxBranches.map((branch) => `${branch.code} · ${branch.isHeadOffice ? "Head Office" : branch.legalNameEn}`)}
+                    onChange={(label) => set("taxBranchId", taxBranches.find((branch) => `${branch.code} · ${branch.isHeadOffice ? "Head Office" : branch.legalNameEn}` === label)?.id ?? "")}
+                    placeholder="Select a tax registration branch"
+                  />
                 </div>
 
                 {/* flex-1 + flex flex-col here (not on the card's other, fixed-
@@ -536,9 +484,9 @@ export function RequestVehicle({ onClose }: { onClose: () => void }) {
                     wrapper's) — rows is dropped since flex-1 now owns the
                     height entirely. */}
                 <div className="flex-1 flex flex-col">
-                  <label className="text-xs font-medium text-slate-600 block mb-1">
+                  <Label>
                     Job notes <span className="text-slate-400 font-normal">(optional)</span>
-                  </label>
+                  </Label>
                   <textarea
                     placeholder="Anything FleetCo should know about this job..."
                     value={draft.jobNotes}
@@ -551,17 +499,15 @@ export function RequestVehicle({ onClose }: { onClose: () => void }) {
                   FleetCo reviews every request against current fleet capacity. You’ll receive a quotation or an availability update once the review is complete.
                 </p>
 
-                <button
+                <Button variant="primary" size="lg"
                   type="submit"
                   disabled={!canSubmit}
-                  className="w-full py-2.5 bg-[var(--portal-accent)] text-white rounded-lg text-xs font-medium hover:bg-[var(--portal-accent-hover)] flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-[var(--portal-accent)] cursor-pointer"
                 >
                   <Send size={13} /> Submit Request
-                </button>
+                </Button>
             </div>
           </form>
         </div>
-      </div>
-    </div>
+      </Modal>
   );
 }

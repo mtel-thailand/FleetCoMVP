@@ -1,10 +1,16 @@
-import { Printer } from "lucide-react";
+/** @jsxImportSource react */
 import { useBookings } from "@/app/lib/bookingsStore";
+import { useInvoices } from "@/app/lib/invoicesStore";
+import { useQuotations } from "@/app/lib/quotationsStore";
+import type { Booking } from "@/app/data/bookings";
 import { type TaxInvoice } from "@/app/data/taxInvoices";
-import { useOpenBookingFromDocument } from "@/app/lib/documentNav";
-import { formatDate } from "@/app/components/ui/utils";
+import { useOpenBookingFromDocument, useOpenInvoice } from "@/app/lib/documentNav";
+import { ArrowRight, Receipt } from "lucide-react";
+import { formatBilingualDocumentDate as formatDate, useI18n } from "@/app/i18n";
 import { formatCurrency } from "@/app/data/formatters";
 import { A4Document } from "@/app/components/documents/A4Document";
+import { DOCUMENT_PREVIEW_FRAME_CLASS, DocumentPreviewFrame } from "@/app/components/documents/DocumentWorkspace";
+import fleetcoLogo from "@/assets/fleetco-logo.svg";
 
 // The primary place a tax invoice is viewed — promoted out of
 // TaxInvoiceInbox.tsx (where it used to be a local, unexported modal
@@ -20,16 +26,25 @@ import { A4Document } from "@/app/components/documents/A4Document";
 // OpsTaxInvoiceDetail.tsx — this component never needed portal-specific
 // logic to begin with (useOpenBookingFromDocument already handles both).
 
-export function TaxInvoiceDocument({ taxInvoice }: { taxInvoice: TaxInvoice }) {
+export function TaxInvoiceDocument({ taxInvoice, booking }: { taxInvoice: TaxInvoice; booking?: Booking }) {
   const lineItems = taxInvoice.lineItems ?? [];
   const hasLineItems = lineItems.length > 0;
   const vatRate = taxInvoice.vatRate ?? 0.07;
+  const rentalPeriodDates = booking
+    ? {
+        en: `${formatDate(booking.startDate).split(" / ")[0]} – ${formatDate(booking.endDate).split(" / ")[0]}`,
+        th: `${formatDate(booking.startDate).split(" / ")[1]} – ${formatDate(booking.endDate).split(" / ")[1]}`,
+      }
+    : null;
+  const rentalPeriodDays = booking
+    ? Math.round((new Date(`${booking.endDate}T00:00:00`).getTime() - new Date(`${booking.startDate}T00:00:00`).getTime()) / 86400000) + 1
+    : null;
 
   const head = (
     <div className="print:break-inside-avoid">
       <div className="flex items-start justify-between border-b border-slate-200 pb-4">
         <div className="flex items-center gap-3">
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-lg font-bold text-white">FC</div>
+          <img src={fleetcoLogo} alt="FleetCo" className="h-11 w-16 shrink-0 object-contain object-left" />
           <div>
             <p className="font-semibold text-slate-900">FleetCo Operations Co., Ltd.</p>
             <p className="text-[12px] text-slate-500">บริษัท ฟลีทโค โอเปอเรชั่นส์ จำกัด</p>
@@ -53,7 +68,7 @@ export function TaxInvoiceDocument({ taxInvoice }: { taxInvoice: TaxInvoice }) {
           <p className="font-semibold text-slate-900">{taxInvoice.buyerName}</p>
           <p className="mt-1 max-w-[260px] leading-snug text-slate-500">{taxInvoice.buyerAddress}</p>
           <p className="mt-1 text-slate-500">Tax ID / เลขผู้เสียภาษี: {taxInvoice.buyerTaxId}</p>
-          <p className="text-slate-500">Branch / สาขา: {taxInvoice.buyerBranch}</p>
+          <p className="text-slate-500">Tax registration branch / สาขาภาษี: {taxInvoice.buyerBranch}</p>
         </div>
       </div>
 
@@ -81,26 +96,34 @@ export function TaxInvoiceDocument({ taxInvoice }: { taxInvoice: TaxInvoice }) {
 
   const columns = hasLineItems ? (
     <tr className="border-b-2 border-slate-800 text-slate-500">
-      <th className="w-6 py-2 text-left font-medium">#</th>
-      <th className="py-2 text-left font-medium">Description / รายละเอียด</th>
-      <th className="w-14 py-2 text-right font-medium">Qty</th>
-      <th className="w-24 py-2 text-left font-medium">Unit / หน่วย</th>
-      <th className="w-28 py-2 text-right font-medium">Unit Price</th>
-      <th className="w-28 py-2 text-right font-medium">Amount</th>
+      <th className="w-6 py-2.5 text-left font-medium">#</th>
+      <th className="py-2.5 pr-3 text-left font-medium">Description / รายละเอียด</th>
+      <th className="w-16 whitespace-nowrap py-2.5 pr-2 text-right font-medium"><span className="block">Qty</span><span className="text-[9px]">จำนวน</span></th>
+      <th className="w-40 py-2.5 pl-3 text-left font-medium"><span className="block">Rental period</span><span className="text-[9px]">ระยะเวลาเช่า</span></th>
+      <th className="w-32 whitespace-nowrap py-2.5 text-right font-medium">Unit Price</th>
+      <th className="w-32 whitespace-nowrap py-2.5 text-right font-medium">Amount</th>
     </tr>
   ) : undefined;
 
   const rows = lineItems.map((item, index) => (
     <tr key={index} className="border-b border-slate-100 align-top print:break-inside-avoid">
-      <td className="py-2 text-slate-400">{index + 1}</td>
-      <td className="py-2 pr-2">
+      <td className="py-2.5 text-slate-400">{index + 1}</td>
+      <td className="py-2.5 pr-3">
         <p className="text-slate-800">{item.description || "—"}</p>
         <p className="text-[10px] text-slate-400">{item.vehicleClass}</p>
       </td>
-      <td className="py-2 text-right text-slate-700">{item.quantity}</td>
-      <td className="py-2 text-slate-700">{item.unit}</td>
-      <td className="py-2 text-right text-slate-700">{formatCurrency(item.unitPrice)}</td>
-      <td className="py-2 text-right font-medium text-slate-900">{formatCurrency(item.amount)}</td>
+      <td className="py-2.5 pr-2 text-right text-slate-700">{item.quantity}</td>
+      <td className="py-2.5 pl-3 text-slate-700">
+        {rentalPeriodDates ? (
+          <>
+            <p className="whitespace-nowrap text-[10px]">{rentalPeriodDates.en}</p>
+            <p className="whitespace-nowrap text-[9px] text-slate-400">{rentalPeriodDates.th}</p>
+          </>
+        ) : <p>—</p>}
+        {rentalPeriodDays && <p className="text-[10px] text-slate-400">{rentalPeriodDays} days</p>}
+      </td>
+      <td className="py-2.5 text-right text-slate-700">{formatCurrency(item.unitPrice)}</td>
+      <td className="py-2.5 text-right font-medium text-slate-900">{formatCurrency(item.amount)}</td>
     </tr>
   ));
 
@@ -150,18 +173,34 @@ export function TaxInvoiceDocument({ taxInvoice }: { taxInvoice: TaxInvoice }) {
 }
 
 export function TaxInvoiceDetail({ taxInvoice }: { taxInvoice: TaxInvoice }) {
+  const { t } = useI18n();
   const booking = useBookings().find((b) => b.id === taxInvoice.bookingId);
+  const sourceInvoice = useInvoices().find((invoice) => invoice.id === taxInvoice.invoiceId);
+  const sourceQuotation = useQuotations().find((quotation) => quotation.id === sourceInvoice?.quotationId);
+  // Some historical tax-invoice fixtures contain only their immutable
+  // totals. Rehydrate the locked line details from the linked invoice or
+  // accepted quotation so the document still shows quantity and rental
+  // period, without replacing any tax-invoice amounts.
+  const lineItems = taxInvoice.lineItems ?? sourceInvoice?.lineItems ?? sourceQuotation?.lineItems;
+  const displayTaxInvoice = lineItems
+    ? {
+        ...taxInvoice,
+        lineItems,
+        discount: taxInvoice.lineItems ? taxInvoice.discount : sourceInvoice?.discount ?? sourceQuotation?.discount ?? taxInvoice.discount,
+        vatRate: taxInvoice.lineItems ? taxInvoice.vatRate : sourceInvoice?.vatRate ?? sourceQuotation?.vatRate ?? taxInvoice.vatRate,
+      }
+    : taxInvoice;
   const openBooking = useOpenBookingFromDocument();
+  const openInvoice = useOpenInvoice();
 
   return (
     <div className="max-w-[1600px]">
       {/* Page header — full width of the page, not squeezed to the
           document's own width (see QuotationDetail's identical header for
           why). No primary action here (a tax invoice is read-only/
-          immutable once issued) — Print used to live here as a result, but
-          now lives in the toolbar below instead, matching where
-          Quotation/InvoiceDetail keep theirs, so Print sits in the same
-          place across all three document viewers. */}
+          immutable once issued) — Download lives inside the document preview
+          below, matching Quotation/InvoiceDetail, so the control sits in the
+          same place across all three document viewers. */}
       <div className="flex items-start justify-between gap-4 mb-5 print:hidden">
         <div>
           <h1 className="text-lg font-semibold text-slate-900">{taxInvoice.id}</h1>
@@ -171,32 +210,26 @@ export function TaxInvoiceDetail({ taxInvoice }: { taxInvoice: TaxInvoice }) {
               — theme.css's button font-size reset doesn't yield to a size
               class on an ancestor, only on the button itself. */}
           <p className="text-xs text-slate-500 mt-1">
-            For <button onClick={() => openBooking(taxInvoice.bookingId)} className="text-xs underline decoration-dotted hover:text-slate-800 cursor-pointer">{booking?.id ?? taxInvoice.bookingId}</button>
+            {t("For")} <button onClick={() => openBooking(taxInvoice.bookingId)} className="text-xs underline decoration-dotted hover:text-slate-800 cursor-pointer">{booking?.id ?? taxInvoice.bookingId}</button>
           </p>
+          <button
+            type="button"
+            onClick={() => openInvoice(taxInvoice.invoiceId)}
+            className="mt-1.5 flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-slate-800 cursor-pointer"
+          >
+            <Receipt size={12} /> {t("Source invoice")} {taxInvoice.invoiceId} <ArrowRight size={11} />
+          </button>
         </div>
-      </div>
-
-      {/* Document toolbar — just Print, right-aligned above the scrollable
-          frame below rather than inside it (see QuotationDetail's identical
-          toolbar for why, including why it's plain text rather than a
-          boxed button, and why the id doesn't repeat here). */}
-      <div className="flex justify-end mb-2 print:hidden">
-        <button
-          onClick={() => window.print()}
-          className="flex items-center gap-1.5 text-xs font-medium text-slate-500 hover:text-slate-800 cursor-pointer"
-        >
-          <Printer size={13} /> Print / Download PDF
-        </button>
       </div>
 
       {/* Same A4 sheet and grey document desk used by quotations and
           invoices, so every commercial document has one consistent viewer
           on screen and the same print-accurate page geometry. */}
-      <div className="bg-slate-200 rounded-2xl overflow-hidden print:bg-white print:rounded-none">
-        <div className="p-4 sm:p-8 print:p-0 h-[75vh] print:h-auto overflow-y-auto print:overflow-visible">
-          <TaxInvoiceDocument taxInvoice={taxInvoice} />
+      <DocumentPreviewFrame downloadFilename={`${taxInvoice.id}.pdf`} className={DOCUMENT_PREVIEW_FRAME_CLASS}>
+        <div className="h-[75vh] print:h-auto overflow-y-auto print:overflow-visible">
+          <TaxInvoiceDocument taxInvoice={displayTaxInvoice} booking={booking} />
         </div>
-      </div>
+      </DocumentPreviewFrame>
     </div>
   );
 }

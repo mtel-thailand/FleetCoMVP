@@ -1,17 +1,26 @@
-import { useState } from "react";
-import { X, AlertTriangle, IdCard, UserCheck, UserX, CalendarOff } from "lucide-react";
+import { useState, type ReactNode } from "react";
+import { useTableState } from "@/app/hooks/useTableState";
+import { Modal, ModalTitle } from "@/app/components/ui/Modal";
+import { Button } from "@/app/components/ui/Button";
+import { Input } from "@/app/components/ui/Input";
+import { Label } from "@/app/components/ui/Label";
+import { DatePicker } from "@/app/components/ui/DatePicker";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/app/components/ui/select";
+import { Link } from "react-router";
+import { X, AlertTriangle, IdCard, UserCheck, UserX, CalendarOff, CalendarClock, CheckCircle2, XCircle, ExternalLink } from "lucide-react";
 import type { Driver, DriverEmploymentStatus, LicenseClass } from "@/app/data/drivers";
-import type { Vehicle } from "@/app/data/vehicles";
+import { useBookings } from "@/app/lib/bookingsStore";
+import { useVehicles } from "@/app/lib/vehiclesStore";
 import { FilterBar } from "@/app/components/ui/FilterBar";
 import { FilterDropdown } from "@/app/components/ui/FilterDropdown";
 import { StatusBadge } from "@/app/components/ui/StatusBadge";
 import { SortIndicator } from "@/app/components/ui/SortIndicator";
 import { TablePagination, PAGE_SIZE } from "@/app/components/ui/TablePagination";
-import { formatDate, sortByStatus, sortByDatetime } from "@/app/components/ui/utils";
+import { formatDate, localDateKey, sortByStatus, sortByDatetime } from "@/app/components/ui/utils";
 import { exportCSV, exportXLSX, parseExcelDate, exportDateTag } from "@/app/components/ui/exportUtils";
-import { useBodyScrollLock } from "@/app/hooks/useBodyScrollLock";
 import { useDrivers, addDriver, updateDriver } from "@/app/lib/driversStore";
-import { useVehicles } from "@/app/lib/vehiclesStore";
+import { toastSuccess } from "@/app/lib/toast";
+import { demoNowStamp } from "@/app/data/demoDates";
 
 // brief §4.3: "Driver roster: profile, license class and expiry, contact,
 // employment status, assigned home vehicle (if any), leave calendar."
@@ -22,7 +31,7 @@ const STATUS_PRIORITY = ["On Leave", "Active", "Inactive"];
 const LICENSE_WARNING_DAYS = 30;
 
 function nowStamp() {
-  return new Date().toISOString().slice(0, 16).replace("T", " ");
+  return demoNowStamp();
 }
 
 type LicenseLevel = "ok" | "soon" | "expired";
@@ -34,22 +43,25 @@ function licenseLevel(dateStr: string, today = new Date()): LicenseLevel {
   return "ok";
 }
 
-const LICENSE_COPY: Record<LicenseLevel, { label: string; cls: string }> = {
-  ok: { label: "OK", cls: "bg-slate-100 text-slate-500" },
-  soon: { label: "Expiring soon", cls: "bg-amber-100 text-amber-700" },
-  expired: { label: "Expired", cls: "bg-red-100 text-red-700" },
+const LICENSE_COPY: Record<LicenseLevel, { label: string; cls: string; icon: typeof CheckCircle2 }> = {
+  ok: { label: "OK", cls: "text-slate-500", icon: CheckCircle2 },
+  soon: { label: "Expiring soon", cls: "text-amber-700", icon: AlertTriangle },
+  expired: { label: "Expired", cls: "text-red-700", icon: XCircle },
 };
 
 function LicenseBadge({ driver }: { driver: Driver }) {
   const level = licenseLevel(driver.licenseExpiry);
+  const copy = LICENSE_COPY[level];
+  const Icon = copy.icon;
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${LICENSE_COPY[level].cls}`}>
-      {LICENSE_COPY[level].label}
+    <span className={`inline-flex items-center gap-1 text-xs font-medium ${copy.cls}`}>
+      <Icon size={13} strokeWidth={2} />
+      {copy.label}
     </span>
   );
 }
 
-function Section({ title, rows }: { title: string; rows: [string, string][] }) {
+function Section({ title, rows }: { title: string; rows: [string, ReactNode][] }) {
   return (
     <div>
       <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">{title}</h4>
@@ -67,17 +79,17 @@ function Section({ title, rows }: { title: string; rows: [string, string][] }) {
 
 // ── Create / edit form ──────────────────────────────────────────────────────
 
-type DriverDraft = Pick<Driver, "name" | "phone" | "licenseNumber" | "licenseClass" | "licenseExpiry" | "homeVehicleId">;
+type DriverDraft = Pick<Driver, "name" | "phone" | "licenseNumber" | "licenseClass" | "licenseExpiry" | "homeBase" | "homeVehicleId">;
 
 const emptyDraft: DriverDraft = {
-  name: "", phone: "", licenseNumber: "", licenseClass: "Standard", licenseExpiry: "", homeVehicleId: undefined,
+  name: "", phone: "", licenseNumber: "", licenseClass: "Standard", licenseExpiry: "", homeBase: "", homeVehicleId: undefined,
 };
 
-function DriverForm({ driver, vehicles, onClose, onSave }: {
-  driver?: Driver; vehicles: Vehicle[]; onClose: () => void; onSave: (d: DriverDraft) => void;
+function DriverForm({ driver, onClose, onSave }: {
+  driver?: Driver; onClose: () => void; onSave: (d: DriverDraft) => void;
 }) {
-  useBodyScrollLock();
   const [form, setForm] = useState<DriverDraft>(driver ?? emptyDraft);
+  const vehicles = useVehicles();
 
   function set<K extends keyof DriverDraft>(key: K, value: DriverDraft[K]) {
     setForm((f) => ({ ...f, [key]: value }));
@@ -86,60 +98,78 @@ function DriverForm({ driver, vehicles, onClose, onSave }: {
   const canSave = form.name.trim() && form.phone.trim() && form.licenseNumber.trim() && form.licenseExpiry;
 
   return (
-    <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
-      <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md shadow-xl max-h-[90vh] overflow-hidden flex flex-col">
+    <Modal onClose={onClose} overlayClassName="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4" contentClassName="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md shadow-xl max-h-[90vh] overflow-hidden flex flex-col">
         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 shrink-0">
-          <h3 className="text-sm font-semibold text-slate-900">{driver ? "Edit Driver" : "Add Driver"}</h3>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 cursor-pointer"><X size={18} /></button>
+          <ModalTitle asChild><h3 className="text-sm font-semibold text-slate-900">{driver ? "Edit Driver" : "Add Driver"}</h3></ModalTitle>
+          <Button variant="close" size="icon" onClick={onClose}><X size={18} /></Button>
         </div>
         <div className="flex-1 overflow-y-auto p-5 space-y-4">
           <div>
-            <label className="text-xs font-medium text-slate-600 block mb-1">Full Name</label>
-            <input value={form.name} onChange={(e) => set("name", e.target.value)} placeholder="e.g. Somchai Jaidee"
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[var(--portal-accent)]" />
+            <Label>Full Name</Label>
+            <Input value={form.name} onChange={(e) => set("name", e.target.value)} placeholder="e.g. Somchai Jaidee" />
           </div>
           <div>
-            <label className="text-xs font-medium text-slate-600 block mb-1">Phone</label>
-            <input value={form.phone} onChange={(e) => set("phone", e.target.value)} placeholder="+66-xx-xxx-xxxx"
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[var(--portal-accent)]" />
+            <Label>Phone</Label>
+            <Input value={form.phone} onChange={(e) => set("phone", e.target.value)} placeholder="+66-xx-xxx-xxxx" />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-xs font-medium text-slate-600 block mb-1">License Number</label>
-              <input value={form.licenseNumber} onChange={(e) => set("licenseNumber", e.target.value)} placeholder="TH-DL-xxxxx"
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[var(--portal-accent)]" />
+              <Label>License Number</Label>
+              <Input value={form.licenseNumber} onChange={(e) => set("licenseNumber", e.target.value)} placeholder="TH-DL-xxxxx" />
             </div>
             <div>
-              <label className="text-xs font-medium text-slate-600 block mb-1">License Class</label>
-              <select value={form.licenseClass} onChange={(e) => set("licenseClass", e.target.value as LicenseClass)}
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[var(--portal-accent)]">
-                {LICENSE_CLASSES.map((c) => <option key={c} value={c}>{c}</option>)}
-              </select>
+              <Label>License Class</Label>
+              <Select value={form.licenseClass} onValueChange={(value) => set("licenseClass", value as LicenseClass)}>
+                <SelectTrigger className="h-9 w-full rounded-lg border-slate-200 bg-white text-xs focus-visible:ring-2 focus-visible:ring-[var(--portal-accent)]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {LICENSE_CLASSES.map((c) => <SelectItem key={c} value={c} className="text-xs">{c}</SelectItem>)}
+                </SelectContent>
+              </Select>
             </div>
           </div>
           <div>
-            <label className="text-xs font-medium text-slate-600 block mb-1">License Expiry</label>
-            <input type="date" value={form.licenseExpiry} onChange={(e) => set("licenseExpiry", e.target.value)}
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[var(--portal-accent)]" />
+            <Label>License Expiry</Label>
+            <DatePicker value={form.licenseExpiry} onChange={(v) => set("licenseExpiry", v)} />
           </div>
           <div>
-            <label className="text-xs font-medium text-slate-600 block mb-1">Home Vehicle (optional)</label>
-            <select value={form.homeVehicleId ?? ""} onChange={(e) => set("homeVehicleId", e.target.value || undefined)}
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[var(--portal-accent)]">
-              <option value="">— None —</option>
-              {vehicles.map((v) => <option key={v.id} value={v.id}>{v.plateNumber} · {v.brand} {v.model}</option>)}
-            </select>
+            <Label>Base Location <span className="font-normal text-slate-400">(planning reference)</span></Label>
+            <Input value={form.homeBase ?? ""} onChange={(e) => set("homeBase", e.target.value)} placeholder="e.g. Bangkok — Lat Krabang" />
+            <p className="mt-1 text-[11px] leading-4 text-slate-400">Does not restrict where this driver may work.</p>
+          </div>
+          <div>
+            <Label>Usual Vehicle <span className="font-normal text-slate-400">(preference only)</span></Label>
+            <Select
+              value={form.homeVehicleId ?? "none"}
+              onValueChange={(value) => set("homeVehicleId", value === "none" ? "" : value)}
+            >
+              <SelectTrigger className="h-9 w-full rounded-lg border-slate-200 bg-white text-xs focus-visible:ring-2 focus-visible:ring-[var(--portal-accent)]">
+                <SelectValue placeholder="No usual vehicle" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none" className="text-xs">No usual vehicle</SelectItem>
+                {vehicles
+                  .slice()
+                  .sort((a, b) => a.plateNumber.localeCompare(b.plateNumber))
+                  .map((vehicle) => (
+                    <SelectItem key={vehicle.id} value={vehicle.id} className="text-xs">
+                      {vehicle.plateNumber} · {vehicle.vehicleClass}
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
+            <p className="mt-1 text-[11px] leading-4 text-slate-400">Used to improve suggestions; it never reserves the vehicle.</p>
           </div>
         </div>
         <div className="flex gap-2 px-5 py-4 border-t border-slate-100 shrink-0">
-          <button onClick={onClose} className="flex-1 py-2 border border-slate-200 rounded-lg text-xs text-slate-600 hover:bg-slate-50 cursor-pointer">Cancel</button>
+          <Button variant="outline" size="md" className="flex-1 px-0 py-2" onClick={onClose}>Cancel</Button>
           <button disabled={!canSave} onClick={() => onSave(form)}
             className="flex-1 py-2 bg-[var(--portal-accent)] text-white rounded-lg text-xs hover:bg-[var(--portal-accent-hover)] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer">
             {driver ? "Save Changes" : "Add Driver"}
           </button>
         </div>
-      </div>
-    </div>
+      </Modal>
   );
 }
 
@@ -161,7 +191,7 @@ function StatusLeaveForm({ driver, onCancel, onSave }: {
         {EMPLOYMENT_STATUSES.map((s) => (
           <button key={s} type="button" onClick={() => setStatus(s)}
             className={`py-2 rounded-lg text-xs font-medium border transition-colors cursor-pointer ${
-              status === s ? "bg-[var(--portal-accent)] text-white border-[var(--portal-accent)]" : "bg-white text-slate-600 border-slate-200 hover:bg-slate-100"
+              status === s ? "border-[var(--portal-accent)] bg-[var(--portal-accent-light)] text-[var(--portal-accent)]" : "bg-white text-slate-600 border-slate-200 hover:bg-slate-100"
             }`}>
             {s}
           </button>
@@ -170,19 +200,17 @@ function StatusLeaveForm({ driver, onCancel, onSave }: {
       {needsLeaveDates && (
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="text-xs font-medium text-slate-600 block mb-1">Leave From</label>
-            <input type="date" value={leaveFrom} onChange={(e) => setLeaveFrom(e.target.value)}
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-[var(--portal-accent)]" />
+            <Label>Leave From</Label>
+            <DatePicker value={leaveFrom} onChange={setLeaveFrom} />
           </div>
           <div>
-            <label className="text-xs font-medium text-slate-600 block mb-1">Leave To</label>
-            <input type="date" value={leaveTo} onChange={(e) => setLeaveTo(e.target.value)}
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-[var(--portal-accent)]" />
+            <Label>Leave To</Label>
+            <DatePicker value={leaveTo} onChange={setLeaveTo} />
           </div>
         </div>
       )}
       <div className="flex gap-2">
-        <button onClick={onCancel} className="flex-1 py-2 border border-slate-200 rounded-lg text-xs text-slate-600 hover:bg-white cursor-pointer">Cancel</button>
+        <Button variant="outline" size="md" className="flex-1 px-0 py-2" onClick={onCancel}>Cancel</Button>
         <button
           disabled={!canSave}
           onClick={() => onSave(
@@ -201,30 +229,70 @@ function StatusLeaveForm({ driver, onCancel, onSave }: {
 
 // ── Driver detail panel ─────────────────────────────────────────────────────
 
-function DriverDetailPanel({ driver, vehicles, onClose, onEdit }: {
-  driver: Driver; vehicles: Vehicle[]; onClose: () => void; onEdit: () => void;
+function DriverDetailPanel({ driver, onClose, onEdit }: {
+  driver: Driver; onClose: () => void; onEdit: () => void;
 }) {
-  useBodyScrollLock();
   const [showStatusForm, setShowStatusForm] = useState(false);
-  const homeVehicle = driver.homeVehicleId ? vehicles.find((v) => v.id === driver.homeVehicleId) : undefined;
+  const [statusError, setStatusError] = useState<string | null>(null);
+  const bookings = useBookings();
+  const vehicles = useVehicles();
   const level = licenseLevel(driver.licenseExpiry);
+  const today = localDateKey();
+  const operationalAssignments = bookings.flatMap((booking) => {
+    if (booking.status !== "Assigned" && booking.status !== "Active") return [];
+    return (booking.assignments ?? [])
+      .filter((assignment) => assignment.driverId === driver.id)
+      .map((assignment) => ({ booking, vehicle: vehicles.find((vehicle) => vehicle.id === assignment.vehicleId) }));
+  });
+  const currentAssignments = operationalAssignments.filter(({ booking }) =>
+    booking.status === "Active" || (booking.startDate <= today && booking.endDate >= today),
+  );
+  const upcomingAssignments = operationalAssignments
+    .filter(({ booking }) => booking.startDate > today)
+    .sort((a, b) => a.booking.startDate.localeCompare(b.booking.startDate));
+
+  function assignmentLinks(items: typeof operationalAssignments): ReactNode {
+    if (items.length === 0) return "None scheduled";
+    return (
+      <span className="flex flex-col items-end gap-1">
+        {items.map(({ booking, vehicle }) => (
+          <span key={booking.id} className="text-right text-xs font-medium text-slate-800">
+            <Link
+              to={`/ops/bookings/${booking.id}`}
+              state={{ returnTo: "/ops/drivers", returnLabel: "Driver Roster", navPath: "/ops/drivers" }}
+              aria-label={`Open rental details for ${booking.id}`}
+              className="inline-flex items-center gap-1 text-[var(--portal-accent)] hover:text-[var(--portal-accent-hover)] hover:underline"
+            >
+              {booking.id} <ExternalLink size={11} />
+            </Link>
+            <span> · {vehicle?.plateNumber ?? "Vehicle not found"}</span>
+          </span>
+        ))}
+      </span>
+    );
+  }
 
   function handleStatusSave(patch: Partial<Driver>) {
-    updateDriver(driver.id, { ...patch, updated: nowStamp() });
-    setShowStatusForm(false);
+    try {
+      updateDriver(driver.id, { ...patch, updated: nowStamp() });
+      setStatusError(null);
+      setShowStatusForm(false);
+      toastSuccess("Driver {name} status updated.", { name: driver.name });
+    } catch (error) {
+      setStatusError(error instanceof Error ? error.message : "Unable to update driver status.");
+    }
   }
 
   return (
-    <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={onClose}>
-      <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-lg shadow-xl max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+    <Modal onClose={onClose} overlayClassName="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4" contentClassName="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-lg shadow-xl max-h-[90vh] flex flex-col">
         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 shrink-0">
           <div>
-            <h3 className="text-sm font-semibold text-slate-900">{driver.name}</h3>
+            <ModalTitle asChild><h3 className="text-sm font-semibold text-slate-900">{driver.name}</h3></ModalTitle>
             <p className="text-xs text-slate-500">{driver.licenseNumber}</p>
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={onEdit} className="px-2.5 py-1.5 text-xs border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50 cursor-pointer">Edit</button>
-            <button onClick={onClose} className="text-slate-400 hover:text-slate-600 cursor-pointer"><X size={18} /></button>
+            <Button variant="outline" size="sm" className="px-2.5" onClick={onEdit}>Edit</Button>
+            <Button variant="close" size="icon" onClick={onClose}><X size={18} /></Button>
           </div>
         </div>
 
@@ -245,7 +313,6 @@ function DriverDetailPanel({ driver, vehicles, onClose, onEdit }: {
               ["Phone", driver.phone],
               ["License Class", driver.licenseClass],
               ["License Expiry", formatDate(driver.licenseExpiry)],
-              ["Home Vehicle", homeVehicle ? `${homeVehicle.plateNumber} · ${homeVehicle.brand} ${homeVehicle.model}` : "— None —"],
             ]}
           />
 
@@ -253,19 +320,34 @@ function DriverDetailPanel({ driver, vehicles, onClose, onEdit }: {
             <Section title="Leave Calendar" rows={[["Leave Period", `${formatDate(driver.leaveFrom)} → ${formatDate(driver.leaveTo)}`]]} />
           )}
 
+          <Section
+            title="Assignment Details"
+            rows={[
+              ["Base Location", driver.homeBase ?? "Not set"],
+              ["Usual Vehicle (preference)", driver.homeVehicleId ? (vehicles.find((vehicle) => vehicle.id === driver.homeVehicleId)?.plateNumber ?? driver.homeVehicleId) : "Not set"],
+              ["Current Rental", assignmentLinks(currentAssignments)],
+              ["Next Rental", assignmentLinks(upcomingAssignments.slice(0, 1))],
+            ]}
+          />
+
+          <div className="flex items-start gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-[11px] leading-4 text-slate-500">
+            <CalendarClock size={13} className="mt-0.5 shrink-0 text-slate-400" />
+            <span>Assignments are rental-specific. The base location and usual vehicle guide planning, but do not restrict future assignments.</span>
+          </div>
+
           <div>
             <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Employment / Leave</h4>
+            {statusError && <div role="alert" className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs leading-5 text-red-800">{statusError}</div>}
             {showStatusForm ? (
-              <StatusLeaveForm driver={driver} onCancel={() => setShowStatusForm(false)} onSave={handleStatusSave} />
+              <StatusLeaveForm driver={driver} onCancel={() => { setShowStatusForm(false); setStatusError(null); }} onSave={handleStatusSave} />
             ) : (
-              <button onClick={() => setShowStatusForm(true)} className="w-full py-2 border border-slate-200 rounded-lg text-xs text-slate-600 hover:bg-slate-50 cursor-pointer">
+              <button onClick={() => { setStatusError(null); setShowStatusForm(true); }} className="w-full py-2 border border-slate-200 rounded-lg text-xs text-slate-600 hover:bg-slate-50 cursor-pointer">
                 Update status / leave...
               </button>
             )}
           </div>
         </div>
-      </div>
-    </div>
+      </Modal>
   );
 }
 
@@ -274,13 +356,13 @@ function DriverDetailPanel({ driver, vehicles, onClose, onEdit }: {
 type SortKey = "status" | "license" | "created" | "updated";
 type SortDir = "asc" | "desc";
 
-const DRV_HEADERS = ["Name", "Phone", "License Number", "License Class", "License Expiry", "Employment Status"];
+const DRV_HEADERS = ["Name", "Phone", "License Number", "License Class", "Base Location", "License Expiry", "Employment Status"];
 
 function drvCSVRow(d: Driver): string[] {
-  return [d.name, d.phone, d.licenseNumber, d.licenseClass, formatDate(d.licenseExpiry), d.employmentStatus];
+  return [d.name, d.phone, d.licenseNumber, d.licenseClass, d.homeBase ?? "", formatDate(d.licenseExpiry), d.employmentStatus];
 }
 function drvXLSXRow(d: Driver): (string | number)[] {
-  return [d.name, d.phone, d.licenseNumber, d.licenseClass, parseExcelDate(d.licenseExpiry) as unknown as string, d.employmentStatus];
+  return [d.name, d.phone, d.licenseNumber, d.licenseClass, d.homeBase ?? "", parseExcelDate(d.licenseExpiry) as unknown as string, d.employmentStatus];
 }
 
 function MiniDash({ drivers }: { drivers: Driver[] }) {
@@ -312,35 +394,33 @@ function MiniDash({ drivers }: { drivers: Driver[] }) {
 
 export function DriverRoster() {
   const drivers = useDrivers();
-  const vehicles = useVehicles();
-  const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("");
-  const [classFilter, setClassFilter] = useState("");
   const [showCreate, setShowCreate] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [page, setPage] = useState(1);
-  const [sortKey, setSortKey] = useState<SortKey | null>(null);
-  const [sortDir, setSortDir] = useState<SortDir>("asc");
+  // Starts unsorted (sortKey null) until a header is clicked — see Vehicles.tsx.
+  const { filters, setFilter, sortKey, sortDir, toggleSort, page, setPage } =
+    useTableState<{ search: string; status: string; class: string }, SortKey>({
+      storageKey: "opsDrivers",
+      filters: { search: "", status: "", class: "" },
+      defaultDirFor: () => "asc",
+    });
+  const { search, status: statusFilter, class: classFilter } = filters;
 
   const selected = selectedId ? (drivers.find((d) => d.id === selectedId) ?? null) : null;
   const editing = editingId ? (drivers.find((d) => d.id === editingId) ?? null) : null;
 
-  function handleSort(key: SortKey) {
-    if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-    else { setSortKey(key); setSortDir("asc"); }
-    setPage(1);
-  }
-
   function handleCreate(draft: DriverDraft) {
     const id = `DRV-${String(drivers.length + 1).padStart(3, "0")}`;
     addDriver({ ...draft, id, employmentStatus: "Active", created: nowStamp(), updated: nowStamp() });
+    setShowCreate(false);
+    toastSuccess("Driver {name} added.", { name: draft.name });
   }
 
   function handleEditSave(draft: DriverDraft) {
     if (!editingId) return;
     updateDriver(editingId, { ...draft, updated: nowStamp() });
     setEditingId(null);
+    toastSuccess("Driver {name} updated.", { name: draft.name });
   }
 
   const filtered = drivers.filter((d) => {
@@ -366,10 +446,10 @@ export function DriverRoster() {
 
   return (
     <div>
-      {showCreate && <DriverForm vehicles={vehicles} onClose={() => setShowCreate(false)} onSave={(d) => { handleCreate(d); setShowCreate(false); }} />}
-      {editing && <DriverForm driver={editing} vehicles={vehicles} onClose={() => setEditingId(null)} onSave={handleEditSave} />}
+      {showCreate && <DriverForm onClose={() => setShowCreate(false)} onSave={handleCreate} />}
+      {editing && <DriverForm driver={editing} onClose={() => setEditingId(null)} onSave={handleEditSave} />}
       {selected && !editing && (
-        <DriverDetailPanel driver={selected} vehicles={vehicles} onClose={() => setSelectedId(null)} onEdit={() => setEditingId(selected.id)} />
+        <DriverDetailPanel driver={selected} onClose={() => setSelectedId(null)} onEdit={() => setEditingId(selected.id)} />
       )}
 
       <MiniDash drivers={drivers} />
@@ -377,7 +457,6 @@ export function DriverRoster() {
       <FilterBar
         showSearch
         searchableFields={["Name", "Phone", "License Number"]}
-        showPeriod
         showExport
         showCreate
         createLabel="Add Driver"
@@ -385,12 +464,13 @@ export function DriverRoster() {
         exportDisabled={sorted.length === 0}
         onExportCSV={() => exportCSV(DRV_HEADERS, sorted.map(drvCSVRow), `drivers-${exportDateTag()}.csv`)}
         onExportXLSX={() => exportXLSX(DRV_HEADERS, sorted.map(drvXLSXRow), `drivers-${exportDateTag()}.xlsx`)}
-        onSearch={(q) => { setSearch(q); setPage(1); }}
+        onSearch={(q) => setFilter("search", q)}
+        defaultSearch={search}
         extraFilters={
           <>
-            <FilterDropdown value={classFilter} onChange={(v) => { setClassFilter(v); setPage(1); }} placeholder="All License Classes"
+            <FilterDropdown value={classFilter} onChange={(v) => setFilter("class", v)} placeholder="All License Classes"
               options={[{ label: "All License Classes", value: "" }, ...LICENSE_CLASSES.map((c) => ({ label: c, value: c }))]} />
-            <FilterDropdown value={statusFilter} onChange={(v) => { setStatusFilter(v); setPage(1); }} placeholder="All Statuses"
+            <FilterDropdown value={statusFilter} onChange={(v) => setFilter("status", v)} placeholder="All Statuses"
               options={[{ label: "All Statuses", value: "" }, ...EMPLOYMENT_STATUSES.map((s) => ({ label: s, value: s }))]} />
           </>
         }
@@ -398,37 +478,39 @@ export function DriverRoster() {
 
       <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
         <div className="overflow-x-auto relative">
-          <table className="w-full table-fixed text-sm" style={{ minWidth: "1050px" }}>
+          <table className="w-full table-fixed text-sm" style={{ minWidth: "1180px" }}>
             <colgroup>
               <col style={{ width: "160px" }} />
               <col style={{ width: "150px" }} />
               <col style={{ width: "140px" }} />
               <col style={{ width: "130px" }} />
+              <col style={{ width: "180px" }} />
               <col style={{ width: "130px" }} />
               <col style={{ width: "140px" }} />
             </colgroup>
             <thead>
               <tr className="border-b border-slate-100 bg-slate-50">
-                {["Name", "Phone", "License Number", "License Class"].map((h) => (
+                {["Name", "Phone", "License Number", "License Class", "Base Location"].map((h) => (
                   <th key={h} className="text-left text-xs font-medium text-slate-400 px-4 py-2.5 whitespace-nowrap">{h}</th>
                 ))}
-                <th className="text-left text-xs font-medium text-slate-400 px-4 py-2.5 whitespace-nowrap cursor-pointer select-none hover:text-slate-600" onClick={() => handleSort("license")}>
+                <th className="text-left text-xs font-medium text-slate-400 px-4 py-2.5 whitespace-nowrap cursor-pointer select-none hover:text-slate-600" onClick={() => toggleSort("license")}>
                   <span className="inline-flex items-center gap-1">License<SortIndicator active={sortKey === "license"} direction={sortDir} /></span>
                 </th>
-                <th className="sticky right-0 bg-slate-50 border-l border-slate-100 z-10 text-left text-xs font-medium text-slate-400 px-4 py-2.5 whitespace-nowrap cursor-pointer select-none hover:text-slate-600" onClick={() => handleSort("status")}>
+                <th className="sticky right-0 bg-slate-50 border-l border-slate-100 z-10 text-left text-xs font-medium text-slate-400 px-4 py-2.5 whitespace-nowrap cursor-pointer select-none hover:text-slate-600" onClick={() => toggleSort("status")}>
                   <span className="inline-flex items-center gap-1">Status<SortIndicator active={sortKey === "status"} direction={sortDir} /></span>
                 </th>
               </tr>
             </thead>
             <tbody>
               {paginated.map((d) => (
-                <tr key={d.id} className="border-b border-slate-50 hover:bg-slate-50 cursor-pointer" onClick={() => setSelectedId(d.id)}>
+                <tr key={d.id} className="border-b border-slate-50 group hover:bg-slate-50 cursor-pointer" onClick={() => setSelectedId(d.id)}>
                   <td className="px-4 py-3 text-xs text-[var(--portal-accent)] font-medium truncate">{d.name}</td>
                   <td className="px-4 py-3 text-xs text-slate-600 whitespace-nowrap">{d.phone}</td>
                   <td className="px-4 py-3 text-xs text-slate-600 whitespace-nowrap">{d.licenseNumber}</td>
                   <td className="px-4 py-3 text-xs text-slate-600 whitespace-nowrap">{d.licenseClass}</td>
+                  <td className="px-4 py-3 text-xs text-slate-600 truncate">{d.homeBase ?? "Not set"}</td>
                   <td className="px-4 py-3 whitespace-nowrap"><LicenseBadge driver={d} /></td>
-                  <td className="sticky right-0 bg-white border-l border-slate-100 px-4 py-3 whitespace-nowrap">
+                  <td className="sticky right-0 bg-white group-hover:bg-slate-50 border-l border-slate-100 px-4 py-3 whitespace-nowrap">
                     <StatusBadge status={d.employmentStatus} />
                   </td>
                 </tr>

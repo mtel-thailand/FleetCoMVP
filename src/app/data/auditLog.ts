@@ -3,6 +3,7 @@
 // every store mutation in the app — a real build would append to this from
 // inside each store's update function; that's a bigger cross-cutting change
 // out of scope here (same honest boundary as notifications.ts).
+import { rebaseDemoDates } from "./demoDates";
 
 export type AuditLogEntry = {
   id: string;
@@ -15,7 +16,7 @@ export type AuditLogEntry = {
   detail: string;
 };
 
-export const mockAuditLog: AuditLogEntry[] = [
+export const mockAuditLog: AuditLogEntry[] = rebaseDemoDates<AuditLogEntry[]>([
   { id: "AL-001", timestamp: "2026-08-14 10:15", actor: "Suphaporn Wongsa", actorRole: "Client Finance", action: "Marked as paid", entityType: "Invoice", entityId: "INV-2026-0001", detail: "Payment reference KBank20260814-0099, ฿2,354.00" },
   { id: "AL-002", timestamp: "2026-08-14 09:40", actor: "Naruemon Srisai", actorRole: "Client Approver / Manager", action: "Accepted", entityType: "Quotation", entityId: "QT-2026-0001", detail: "฿11,984.00 — booking BK-2026-0002 advanced to Accepted" },
   { id: "AL-003", timestamp: "2026-08-13 09:00", actor: "Pakawat Chuenjai", actorRole: "Client Requester", action: "Declined", entityType: "Quotation", entityId: "QT-2026-0010", detail: "Reason: rate above client's approved budget for this route" },
@@ -28,4 +29,4 @@ export const mockAuditLog: AuditLogEntry[] = [
   { id: "AL-010", timestamp: "2026-06-29 10:00", actor: "Finance Team", actorRole: "Finance Officer", action: "Issued", entityType: "Invoice", entityId: "INV-2026-0003", detail: "฿101,650.00 due 29 Jul 2026 — booking BK-2026-0010" },
   { id: "AL-011", timestamp: "2026-05-16 10:00", actor: "Account Team", actorRole: "Account / BD Manager", action: "Issued", entityType: "Quotation", entityId: "QT-2026-0009", detail: "฿98,000.00 subtotal, 3,000 volume discount — booking BK-2026-0010" },
   { id: "AL-012", timestamp: "2026-08-12 09:00", actor: "System", actorRole: "—", action: "Status changed", entityType: "Driver", entityId: "DRV-004", detail: "Active → On Leave (10 Aug – 20 Aug 2026)" },
-];
+]);

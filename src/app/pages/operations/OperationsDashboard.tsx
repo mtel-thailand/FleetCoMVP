@@ -15,16 +15,19 @@ import {
   Wallet,
   Wrench,
 } from "lucide-react";
-import { bookingInvoices, fleetCoBookingStatusLabel, type Booking } from "@/app/data/bookings";
+import { bookingInvoices, bookingQuotations, fleetCoBookingStatusLabel, type Booking } from "@/app/data/bookings";
+import { isQuotationExpired } from "@/app/data/quotations";
 import { formatCurrency } from "@/app/data/formatters";
 import type { Invoice } from "@/app/data/invoices";
+import { invoiceDisplayStatus } from "@/app/data/invoices";
 import { StatusBadge } from "@/app/components/ui/StatusBadge";
-import { formatDate } from "@/app/components/ui/utils";
+import { formatDate, localDateKey } from "@/app/components/ui/utils";
 import { useBookings } from "@/app/lib/bookingsStore";
 import { useClients } from "@/app/lib/clientsStore";
 import { useInvoices } from "@/app/lib/invoicesStore";
+import { useQuotations } from "@/app/lib/quotationsStore";
 import { useVehicles } from "@/app/lib/vehiclesStore";
-import { daysFromToday, fleetCoNextAction, relativeDateLabel } from "@/app/lib/fleetCoActions";
+import { daysFromToday, fleetCoNextAction, getRentalReminder, relativeDateLabel } from "@/app/lib/fleetCoActions";
 
 type WorkLane = "all" | "operations" | "commercial" | "finance";
 type WorkPriority = "urgent" | "high" | "normal";
@@ -168,11 +171,15 @@ export function OperationsDashboard() {
   const clients = useClients();
   const vehicles = useVehicles();
   const invoices = useInvoices();
-  const today = new Date().toISOString().slice(0, 10);
+  const quotations = useQuotations();
+  const today = localDateKey();
   const clientById = new Map(clients.map((client) => [client.id, client]));
 
   const pendingRequests = bookings.filter((booking) => booking.status === "Requested");
-  const awaitingAcceptance = bookings.filter((booking) => booking.status === "Quoted");
+  const awaitingAcceptance = bookings.filter((booking) => {
+    const quotation = bookingQuotations(booking.id, quotations)[0];
+    return booking.status === "Quoted" && quotation?.status === "Issued" && !isQuotationExpired(quotation);
+  });
   const acceptedUnassigned = bookings.filter((booking) => booking.status === "Accepted");
   const activeToday = bookings.filter(
     (booking) => booking.status === "Active" && booking.startDate <= today && today <= booking.endDate,
@@ -184,7 +191,7 @@ export function OperationsDashboard() {
     .filter((invoice) => invoice.status === "Paid")
     .reduce((total, invoice) => total + invoice.amountDue, 0);
   const outstandingRevenue = invoices
-    .filter((invoice) => ["Unpaid", "Overdue", "Payment Issue", "Payment Submitted"].includes(invoice.status))
+    .filter((invoice) => ["Unpaid", "Overdue", "Payment Issue", "Payment Submitted"].includes(invoiceDisplayStatus(invoice)))
     .reduce((total, invoice) => total + invoice.amountDue, 0);
 
   const workItems: WorkItem[] = [];
@@ -202,6 +209,23 @@ export function OperationsDashboard() {
       icon: <UserCog size={15} />,
     });
   });
+
+  bookings
+    .filter((booking) => booking.status === "Assigned")
+    .forEach((booking) => {
+      const reminder = getRentalReminder(booking, today);
+      if (reminder !== "start_due" && reminder !== "start_overdue") return;
+      workItems.push({
+        id: `start-${booking.id}`,
+        lane: "operations",
+        priority: "urgent",
+        title: reminder === "start_overdue" ? "Start rental overdue" : "Start rental due today",
+        detail: `${booking.id} · ${booking.quantity} assigned unit${booking.quantity === 1 ? "" : "s"} · ${booking.pickupLocation}`,
+        timing: relativeDateLabel(booking.startDate, today, "Starts"),
+        to: `/ops/bookings/${booking.id}`,
+        icon: <Clock3 size={15} />,
+      });
+    });
 
   pendingRequests.forEach((booking) => {
     const daysToStart = daysFromToday(booking.startDate, today);
@@ -230,7 +254,7 @@ export function OperationsDashboard() {
     });
   });
 
-  invoices.filter((invoice) => invoice.status === "Overdue").forEach((invoice) => {
+  invoices.filter((invoice) => invoiceDisplayStatus(invoice) === "Overdue").forEach((invoice) => {
     workItems.push({
       id: `overdue-${invoice.id}`,
       lane: "finance",
@@ -258,20 +282,37 @@ export function OperationsDashboard() {
       });
     });
 
-  activeToday.forEach((booking) => {
-    const daysToEnd = daysFromToday(booking.endDate, today);
-    if (daysToEnd < 0 || daysToEnd > RENTAL_ENDING_SOON_DAYS) return;
-    workItems.push({
-      id: `closeout-${booking.id}`,
-      lane: "operations",
-      priority: daysToEnd <= 1 ? "urgent" : "normal",
-      title: "Confirm return or extension",
-      detail: `${booking.id} · ${booking.quantity} active unit${booking.quantity === 1 ? "" : "s"} · ${booking.pickupLocation}`,
-      timing: relativeDateLabel(booking.endDate, today, "Ends"),
-      to: `/ops/bookings/${booking.id}`,
-      icon: <Clock3 size={15} />,
+  // Deliberately not activeToday — that list requires today <= endDate, so
+  // it excludes exactly the bookings this reminder most needs to catch: an
+  // Active rental whose end date has already passed. Complete Rental is
+  // manual-only (see vehiclesStore.ts / OpsBookingDetailPanel's own
+  // comments on why), so an overdue-but-still-Active booking is a real,
+  // ongoing state here, not a data error — and until now this was the one
+  // place on the whole ops side that couldn't see it, since the Vehicle and
+  // Booking detail pages both surface it but neither is where ops actually
+  // lands first.
+  bookings
+    .filter((booking) => booking.status === "Active" && booking.startDate <= today)
+    .forEach((booking) => {
+      const daysToEnd = daysFromToday(booking.endDate, today);
+      if (daysToEnd > RENTAL_ENDING_SOON_DAYS) return;
+      const overdue = daysToEnd < 0;
+      const reminder = getRentalReminder(booking, today);
+      workItems.push({
+        id: `closeout-${booking.id}`,
+        lane: "operations",
+        priority: overdue || daysToEnd <= 1 ? "urgent" : "normal",
+        title: reminder === "completion_overdue"
+          ? "Complete rental overdue"
+          : reminder === "completion_due"
+            ? "Complete rental due today"
+            : "Confirm return or extension",
+        detail: `${booking.id} · ${booking.quantity} active unit${booking.quantity === 1 ? "" : "s"} · ${booking.pickupLocation}`,
+        timing: relativeDateLabel(booking.endDate, today, "Ends"),
+        to: `/ops/bookings/${booking.id}`,
+        icon: <Clock3 size={15} />,
+      });
     });
-  });
 
   const schedule = bookings
     .filter((booking) => {
@@ -384,7 +425,7 @@ export function OperationsDashboard() {
                   return (
                     <tr key={booking.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50">
                       <td className="px-5 py-3">
-                        <Link to={`/ops/bookings/${booking.id}`} className="font-semibold text-slate-900 hover:text-[var(--portal-accent)]">
+                        <Link to={`/ops/bookings/${booking.id}`} state={{ returnTo: "/ops/dashboard", returnLabel: "Overview", navPath: "/ops/dashboard" }} className="font-semibold text-slate-900 hover:text-[var(--portal-accent)]">
                           {booking.id}
                         </Link>
                         <p className="mt-0.5 text-[10px] text-slate-400">Requested {formatDate(booking.created)}</p>
@@ -396,11 +437,11 @@ export function OperationsDashboard() {
                       <td className="px-4 py-3">
                         <div className="flex flex-wrap items-center gap-1.5">
                           <StatusBadge status={fleetCoBookingStatusLabel(booking)} />
-                          {latestInvoice && <StatusBadge status={latestInvoice.status} />}
+                          {latestInvoice && <StatusBadge status={invoiceDisplayStatus(latestInvoice)} />}
                         </div>
                       </td>
                       <td className="px-4 py-3">
-                        <Link aria-label={`Open booking ${booking.id}`} to={`/ops/bookings/${booking.id}`} className="text-slate-300 hover:text-slate-700">
+                        <Link aria-label={`Open booking ${booking.id}`} to={`/ops/bookings/${booking.id}`} state={{ returnTo: "/ops/dashboard", returnLabel: "Overview", navPath: "/ops/dashboard" }} className="text-slate-300 hover:text-slate-700">
                           <ArrowRight size={14} />
                         </Link>
                       </td>

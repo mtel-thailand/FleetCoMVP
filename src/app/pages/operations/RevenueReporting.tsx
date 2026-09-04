@@ -1,14 +1,17 @@
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+import { Button } from "@/app/components/ui/Button";
 import { TrendingUp, Wallet, Repeat, Gauge, Download, AlertCircle } from "lucide-react";
 import { useInvoices } from "@/app/lib/invoicesStore";
 import { useBookings } from "@/app/lib/bookingsStore";
 import { useVehicles } from "@/app/lib/vehiclesStore";
 import { useClients } from "@/app/lib/clientsStore";
 import type { Vehicle } from "@/app/data/vehicles";
+import { invoiceDisplayStatus } from "@/app/data/invoices";
 import { formatCurrency } from "@/app/data/formatters";
 import { formatDate } from "@/app/components/ui/utils";
 import { exportCSV, exportXLSX, exportDateTag } from "@/app/components/ui/exportUtils";
 import { SHOW_EXPORTS } from "@/app/lib/featureFlags";
+import { useI18n } from "@/app/i18n";
 
 // brief §4.7 — the other big gap the audit flagged. "Revenue by
 // client/vehicle/type/rental-type; monthly trend; committed future revenue
@@ -74,15 +77,16 @@ function CardHeader({ title, onExport }: { title: string; onExport?: () => void 
     <div className="flex items-center justify-between mb-4">
       <h3 className="text-sm font-semibold text-slate-900">{title}</h3>
       {SHOW_EXPORTS && onExport && (
-        <button onClick={onExport} className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-800 cursor-pointer">
+        <Button variant="ghost" size="icon" className="flex items-center gap-1 text-xs" onClick={onExport}>
           <Download size={12} /> Export
-        </button>
+        </Button>
       )}
     </div>
   );
 }
 
 export function RevenueReporting() {
+  const { language, t } = useI18n();
   const invoices = useInvoices();
   const bookings = useBookings();
   const vehicles = useVehicles();
@@ -92,7 +96,7 @@ export function RevenueReporting() {
   const today = new Date();
 
   const totalRevenue = invoices.reduce((sum, i) => sum + i.amountDue, 0);
-  const outstanding = invoices.filter((i) => i.status === "Unpaid" || i.status === "Overdue" || i.status === "Payment Issue");
+  const outstanding = invoices.filter((i) => ["Unpaid", "Overdue", "Payment Issue"].includes(invoiceDisplayStatus(i)));
   const outstandingTotal = outstanding.reduce((sum, i) => sum + i.amountDue, 0);
 
   // Committed future revenue — the most recent invoice amount for each
@@ -113,7 +117,12 @@ export function RevenueReporting() {
 
   const monthBuckets = Array.from({ length: MONTHS_SHOWN }, (_, i) => {
     const d = new Date(today.getFullYear(), today.getMonth() - (MONTHS_SHOWN - 1 - i), 1);
-    return { key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`, label: MONTH_NAMES[d.getMonth()] };
+    return {
+      key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`,
+      label: language === "th"
+        ? new Intl.DateTimeFormat("th-TH", { month: "short" }).format(d)
+        : MONTH_NAMES[d.getMonth()],
+    };
   });
   const revenueByMonth = monthBuckets.map((m) => ({
     month: m.label,
@@ -151,9 +160,9 @@ export function RevenueReporting() {
     <div className="space-y-6">
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <MetricCard title="Total Revenue" value={formatCurrency(totalRevenue)} subtitle="All issued invoices, all time" icon={<TrendingUp size={18} />} color="bg-emerald-50 text-emerald-600" />
-        <MetricCard title="Outstanding Receivables" value={formatCurrency(outstandingTotal)} subtitle={`${outstanding.length} invoice${outstanding.length === 1 ? "" : "s"}`} icon={<Wallet size={18} />} color="bg-amber-50 text-amber-600" />
-        <MetricCard title="Committed Monthly Revenue" value={formatCurrency(committedMonthly)} subtitle={`${recurringActive.length} long-term rental${recurringActive.length === 1 ? "" : "s"} running`} icon={<Repeat size={18} />} color="bg-indigo-50 text-indigo-600" />
-        <MetricCard title="Fleet Utilization" value={`${utilizationPct}%`} subtitle={`${onRentalCount} of ${vehicles.length} vehicles on rental`} icon={<Gauge size={18} />} color="bg-sky-50 text-sky-600" />
+        <MetricCard title="Outstanding Receivables" value={formatCurrency(outstandingTotal)} subtitle={t("{count} invoices", { count: outstanding.length })} icon={<Wallet size={18} />} color="bg-amber-50 text-amber-600" />
+        <MetricCard title="Committed Monthly Revenue" value={formatCurrency(committedMonthly)} subtitle={t("{count} long-term rentals running", { count: recurringActive.length })} icon={<Repeat size={18} />} color="bg-indigo-50 text-indigo-600" />
+        <MetricCard title="Fleet Utilization" value={`${utilizationPct}%`} subtitle={t("{count} of {total} vehicles on rental", { count: onRentalCount, total: vehicles.length })} icon={<Gauge size={18} />} color="bg-sky-50 text-sky-600" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -228,7 +237,7 @@ export function RevenueReporting() {
 
       <div className="bg-white border border-slate-200 rounded-xl p-5">
         <CardHeader
-          title={`Idle Vehicle Report (${idleVehicles.length})`}
+          title={t("Idle Vehicle Report ({count})", { count: idleVehicles.length })}
           onExport={idleVehicles.length > 0 ? () => exportCSV(
             ["Plate Number", "Class", "Idle Since", "Days Idle"],
             idleVehicles.map(({ v, idleDays }) => [v.plateNumber, v.vehicleClass, formatDate(today.toISOString()), String(idleDays)]),
@@ -245,7 +254,7 @@ export function RevenueReporting() {
                   <p className="text-xs font-medium text-slate-800 truncate">{v.plateNumber}</p>
                   <p className="text-[11px] text-slate-400 truncate">{v.brand} {v.model} · {v.vehicleClass}</p>
                 </div>
-                <span className={`text-xs font-semibold shrink-0 ml-2 ${idleDays >= 7 ? "text-amber-600" : "text-slate-500"}`}>{idleDays}d idle</span>
+                <span className={`text-xs font-semibold shrink-0 ml-2 ${idleDays >= 7 ? "text-amber-600" : "text-slate-500"}`}>{t("{count} days idle", { count: idleDays })}</span>
               </div>
             ))}
           </div>
@@ -269,7 +278,7 @@ export function RevenueReporting() {
               <div className="h-1 bg-white rounded-full mt-1.5 overflow-hidden">
                 <div className={`h-full rounded-full ${a.bucket === "Current" ? "bg-slate-400" : "bg-red-400"}`} style={{ width: `${(a.total / agingMax) * 100}%` }} />
               </div>
-              <p className="text-[10px] text-slate-400 mt-1">{a.count} invoice{a.count === 1 ? "" : "s"}</p>
+              <p className="text-[10px] text-slate-400 mt-1">{t("{count} invoices", { count: a.count })}</p>
             </div>
           ))}
         </div>

@@ -4,6 +4,7 @@ import { updateQuotation } from "@/app/lib/quotationsStore";
 import { updateInvoice } from "@/app/lib/invoicesStore";
 import { updateBooking } from "@/app/lib/bookingsStore";
 import { addNotification } from "@/app/lib/notificationsStore";
+import { demoNowStamp } from "@/app/data/demoDates";
 
 // The one implementation of each client decision — called from both the
 // Booking Detail modal (quick action, for when you already know what
@@ -14,7 +15,7 @@ import { addNotification } from "@/app/lib/notificationsStore";
 // site each, not duplicated at every place these get triggered from.
 
 function nowStamp() {
-  return new Date().toISOString().slice(0, 16).replace("T", " ");
+  return demoNowStamp();
 }
 
 /**

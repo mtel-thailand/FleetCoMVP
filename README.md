@@ -21,12 +21,20 @@ npm i
 npm run dev
 ```
 
-Demo login: any username, password `1234`, then pick a role from either the
-"FleetCo Team" or "Thailand Post — Client Portal" group to see that side.
+Demo login: choose FleetCo or Thailand Post, use any username and password
+`1234`. The demo signs into that portal's primary admin persona; role and
+permission testing is intentionally outside the MVP scope.
 
 ## Status
 
-Scaffold + shared domain layer are in place; every nav item routes to a real
-page, but most are still `StubPage` placeholders (see the two-portal route
-list in `src/app/routes.tsx`) — screens get built out next, starting with
-vehicle + driver assignment on a booking.
+The two MVP hero flows are demoable end to end: request → quotation →
+acceptance → assignment, and invoice → payment evidence → verification → tax
+invoice. Navigation prioritizes those flows; broader roadmap screens and
+role-based access are not part of this MVP review.
+
+Seed dates use a rolling demo timeline. The authored scenario is anchored to
+25 August 2026 and shifted as a complete set so that date to the viewer is
+always "today". Relationships such as upcoming, overdue, and expired therefore
+remain stable without manually moving the data to another year. Saved demo
+state lasts through reloads for the current calendar day and refreshes from the
+rebased seed on the next day.

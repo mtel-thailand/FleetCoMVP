@@ -5,6 +5,7 @@
     "module": "ESNext",
     "moduleResolution": "bundler",
     "jsx": "react-jsx",
+    "jsxImportSource": "@fleetco/i18n",
     "strict": true,
     "noUnusedLocals": false,
     "noUnusedParameters": false,
@@ -15,7 +16,8 @@
     "noEmit": true,
     "allowJs": false,
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@fleetco/i18n/*": ["./src/app/i18n/*"]
     }
   },
   "include": ["src"]

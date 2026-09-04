@@ -1,4 +1,4 @@
-import type { Invoice, InvoiceStatus } from "@/app/data/invoices";
+import { invoiceDisplayStatus, type Invoice, type InvoiceStatus } from "@/app/data/invoices";
 import { StatusBadge } from "./StatusBadge";
 import { formatCurrency } from "@/app/data/formatters";
 import { formatDate } from "./utils";
@@ -67,9 +67,10 @@ export function InvoiceStatusCell({
   align?: "start" | "end";
   variant?: "compact" | "table";
 }) {
-  const { filled, bar } = PROGRESS[status];
-  const showDueDate = status === "Unpaid" || status === "Overdue";
-  const labelColor = status === "Overdue" ? "text-rose-600" : status === "Payment Issue" ? "text-orange-600" : "text-slate-700";
+  const displayStatus = invoiceDisplayStatus({ status, dueDate: dueDate ?? "" });
+  const { filled, bar } = PROGRESS[displayStatus];
+  const showDueDate = displayStatus === "Unpaid" || displayStatus === "Overdue";
+  const labelColor = displayStatus === "Overdue" ? "text-rose-600" : displayStatus === "Payment Issue" ? "text-orange-600" : "text-slate-700";
   const isTable = variant === "table";
   return (
     // gap-1, not gap-0 — zero gap left the bar and label touching, reading
@@ -86,7 +87,7 @@ export function InvoiceStatusCell({
         ))}
       </div>
       <span className={`${isTable ? "text-[11px]" : "text-[10px]"} font-medium ${labelColor}`}>
-        {CELL_LABEL[status]}
+        {CELL_LABEL[displayStatus]}
         {showDueDate && dueDate && <span className="text-slate-400"> · {formatDate(dueDate)}</span>}
       </span>
     </div>
@@ -108,7 +109,8 @@ export function InvoiceProgress({ invoices }: { invoices: Invoice[] }) {
     );
   }
 
-  const { filled, bar } = PROGRESS[latest.status];
+  const displayStatus = invoiceDisplayStatus(latest);
+  const { filled, bar } = PROGRESS[displayStatus];
 
   return (
     <div className="bg-white border border-slate-200 rounded-xl p-4" aria-label="Invoice status">
@@ -118,7 +120,7 @@ export function InvoiceProgress({ invoices }: { invoices: Invoice[] }) {
         ))}
       </div>
       <div className="flex items-center justify-between gap-2">
-        <StatusBadge status={latest.status} />
+        <StatusBadge status={displayStatus} />
         <span className="text-xs font-semibold text-slate-800">{formatCurrency(latest.amountDue)}</span>
       </div>
       <p className="text-[11px] text-slate-400 mt-1.5">{latest.id} · issued {formatDate(latest.issuedAt)}</p>

@@ -1,4 +1,5 @@
-import { useNavigate, useParams } from "react-router";
+import { useLocation, useNavigate, useParams } from "react-router";
+import { Button } from "@/app/components/ui/Button";
 import { ArrowLeft, FileQuestion } from "lucide-react";
 import { useBookings } from "@/app/lib/bookingsStore";
 import { useVehicles } from "@/app/lib/vehiclesStore";
@@ -22,6 +23,7 @@ import { usePageHeader } from "@/app/lib/pageHeaderStore";
 export function BookingDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const bookings = useBookings();
   const vehicles = useVehicles();
   const drivers = useDrivers();
@@ -30,6 +32,9 @@ export function BookingDetail() {
   const taxInvoices = useTaxInvoices();
 
   const booking = bookings.find((b) => b.id === id && b.clientId === CLIENT_ID);
+  const origin = location.state as { returnTo?: string; returnLabel?: string; returnState?: unknown } | null;
+  const returnTo = origin?.returnTo?.startsWith("/portal/") ? origin.returnTo : undefined;
+  const returnLabel = returnTo ? origin?.returnLabel : undefined;
 
   // Top header shows the booking's own id, and — this is also what keeps
   // Sidebar.tsx's My Requests/My Rentals highlighted correctly while on
@@ -38,7 +43,7 @@ export function BookingDetail() {
   // "My Requests"/"My Rentals", not the shortened "Requests"/"Rentals" —
   // matching the sidebar item's own real label exactly, since this
   // subtitle is standing in for "which page this belongs under."
-  usePageHeader(booking?.id, booking ? (clientNavSection(booking.status) === "requests" ? "My Requests" : "My Rentals") : "");
+  usePageHeader(booking?.id, booking ? (returnLabel ?? (clientNavSection(booking) === "requests" ? "My Requests" : "My Rentals")) : "");
 
   // Repeat exits to My Requests specifically (not back to wherever this page
   // was reached from) — that's the one place "New Request" actually lives,
@@ -62,21 +67,24 @@ export function BookingDetail() {
   // booking has since moved out of. Falls back to real history only when
   // there's no booking to derive a section from (the not-found case).
   function handleBack() {
+    if (returnTo) {
+      navigate(returnTo, { state: origin?.returnState });
+      return;
+    }
     if (!booking) {
       navigate(-1);
       return;
     }
-    navigate(clientNavSection(booking.status) === "requests" ? "/portal/requests" : "/portal/rentals");
+    navigate(clientNavSection(booking) === "requests" ? "/portal/requests" : "/portal/rentals");
   }
 
   return (
     <div>
-      <button
+      <Button variant="ghost" size="icon" className="flex items-center gap-1.5 text-xs mb-4"
         onClick={handleBack}
-        className="flex items-center gap-1.5 text-xs font-medium text-slate-500 hover:text-slate-800 mb-4 cursor-pointer"
       >
-        <ArrowLeft size={14} /> Back
-      </button>
+        <ArrowLeft size={14} /> {returnLabel ? `Back to ${returnLabel}` : "Back"}
+      </Button>
 
       {booking ? (
         <ClientBookingDetail

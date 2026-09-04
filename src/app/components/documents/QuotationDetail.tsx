@@ -1,16 +1,29 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
+import { Modal } from "@/app/components/ui/Modal";
+import { Button } from "@/app/components/ui/Button";
 import { toast } from "sonner";
-import { Printer, Check, Ban, FileText } from "lucide-react";
-import type { Quotation } from "@/app/data/quotations";
+import { translate } from "@/app/i18n";
+import { Check, Ban, FileText } from "lucide-react";
+import type { Booking } from "@/app/data/bookings";
+import type { ClientAccount } from "@/app/data/clients";
+import { isQuotationExpired, quotationDisplayStatus, quotationTotals, type Quotation } from "@/app/data/quotations";
+import { formatCurrency } from "@/app/data/formatters";
 import { useClients } from "@/app/lib/clientsStore";
+import { useBookings } from "@/app/lib/bookingsStore";
 import { acceptQuotation, declineQuotation } from "@/app/lib/documentActions";
-import { getAdminRole } from "@/app/lib/auth";
+import { getAdminRole, ROLE_PORTAL } from "@/app/lib/auth";
 import { useOpenBookingFromDocument } from "@/app/lib/documentNav";
-import { useBodyScrollLock } from "@/app/hooks/useBodyScrollLock";
 import { StatusBadge } from "@/app/components/ui/StatusBadge";
 import { ReasonForm } from "@/app/components/ui/ReasonForm";
 import { SignaturePad } from "@/app/components/ui/SignaturePad";
 import { CommercialDocument } from "@/app/components/documents/CommercialDocument";
+import {
+  DOCUMENT_PREVIEW_FRAME_CLASS,
+  DocumentPreviewFrame,
+  DocumentWorkspace,
+  EditorSection,
+} from "@/app/components/documents/DocumentWorkspace";
+import { formatDate } from "@/app/components/ui/utils";
 
 // The primary place a quotation is viewed and, when it's still pending, the
 // primary place it's decided — reachable directly (a routed
@@ -18,7 +31,7 @@ import { CommercialDocument } from "@/app/components/documents/CommercialDocumen
 // from a booking's own Documents list (useOpenQuotation, which navigates
 // straight here). Rendered as the actual A4 document (same
 // letterhead/table/totals layout as DocumentEditor's live A4Preview on the
-// issuing side, and what "Print / Download PDF" produces), because deciding
+// issuing side, and what "Download PDF" produces), because deciding
 // on a quotation without seeing that was the point of building this view in
 // the first place.
 //
@@ -38,17 +51,19 @@ import { CommercialDocument } from "@/app/components/documents/CommercialDocumen
 // the booking rather than leaving the client staring at an inert "no longer
 // be actioned" document.
 
-// useBodyScrollLock matches every other full-screen overlay in this app
-// (RequestVehicle, DocumentEditor, etc.) — without it the page (or the
-// document's own internal scrollbox below) stays scrollable underneath the
-// backdrop. No separate title here — ReasonForm's own label already reads
-// as one ("Reason for declining"), so a second modal-level heading above it
-// would just repeat that.
+// Scroll locking used to be a hand-rolled useBodyScrollLock() call here (and
+// in every other overlay) — without it the page, or the document's own
+// internal scrollbox below, stays scrollable underneath the backdrop. Modal
+// now gets that from Radix, which additionally compensates for scrollbar
+// width so opening this no longer nudges the page sideways.
+//
+// No *visible* modal-level heading here — ReasonForm's own label already
+// reads as one ("Reason for declining"), and a second heading above it would
+// just repeat that. The `title` prop below is the screen-reader-only name
+// Radix requires, so assistive tech still announces the dialog by that label.
 function DeclineModal({ onCancel, onConfirm }: { onCancel: () => void; onConfirm: (reason: string) => void }) {
-  useBodyScrollLock();
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4" onClick={onCancel}>
-      <div className="w-full max-w-md rounded-xl shadow-2xl" onClick={(e) => e.stopPropagation()}>
+    <Modal onClose={onCancel} overlayClassName="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4" contentClassName="w-full max-w-md rounded-xl shadow-2xl" title="Reason for declining">
         <ReasonForm
           title="Reason for declining"
           placeholder="Let FleetCo know why, so they can revise the quotation..."
@@ -56,63 +71,174 @@ function DeclineModal({ onCancel, onConfirm }: { onCancel: () => void; onConfirm
           onCancel={onCancel}
           onConfirm={onConfirm}
         />
-      </div>
-    </div>
+      </Modal>
   );
 }
 
-// Same shell as DeclineModal, own content — a signature, not a reason.
-// rememberAs uses the signing role, same mechanism DocumentEditor.tsx
-// already uses on FleetCo's side (P'Tarn's "save signature per account,"
-// per the SignaturePad's own rememberAs comment) — each client role that
-// can accept keeps its own remembered signature across quotations, no new
-// persistence to build.
-function AcceptModal({ onCancel, onConfirm }: { onCancel: () => void; onConfirm: (signature: string) => void }) {
-  useBodyScrollLock();
-  const [signature, setSignature] = useState<string | null>(null);
+function ReviewRow({ label, value, emphasis = false }: { label: string; value: ReactNode; emphasis?: boolean }) {
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4" onClick={onCancel}>
-      <div className="w-full max-w-md bg-white rounded-xl shadow-2xl p-5" onClick={(e) => e.stopPropagation()}>
-        <h3 className="text-sm font-semibold text-slate-900">Sign to accept</h3>
-        <p className="text-xs text-slate-500 mt-1 mb-3 leading-relaxed">
-          This signs the quotation on Thailand Post's behalf and moves the booking to Accepted.
-        </p>
-        <SignaturePad value={signature} onChange={setSignature} rememberAs={getAdminRole() ?? undefined} />
-        <div className="flex gap-2 mt-4">
-          <button onClick={onCancel} className="flex-1 py-2 border border-slate-200 rounded-lg text-xs text-slate-600 hover:bg-slate-50 cursor-pointer">
-            Cancel
-          </button>
-          <button
-            disabled={!signature}
-            onClick={() => onConfirm(signature!)}
-            className="flex-1 py-2 bg-[var(--portal-accent)] text-white rounded-lg text-xs font-medium hover:bg-[var(--portal-accent-hover)] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-          >
-            Confirm Accept
-          </button>
-        </div>
-      </div>
+    <div className="flex items-start justify-between gap-4 text-xs">
+      <span className="text-slate-500">{label}</span>
+      <span className={`text-right ${emphasis ? "font-semibold text-slate-900" : "text-slate-700"}`}>{value}</span>
     </div>
   );
 }
 
-export function QuotationDetail({ quotation }: { quotation: Quotation }) {
+function QuotationPreview({ quotation, client, booking, clientSignature }: {
+  quotation: Quotation;
+  client: ClientAccount | undefined;
+  booking: Booking | undefined;
+  clientSignature?: string | null;
+}) {
+  return (
+    <CommercialDocument
+      mode="quotation"
+      docNumber={quotation.id}
+      client={client}
+      booking={booking}
+      bookingId={quotation.bookingId}
+      lineItems={quotation.lineItems}
+      discount={quotation.discount}
+      vatRate={quotation.vatRate}
+      remarks={quotation.remarks}
+      paymentTerms={quotation.paymentTerms}
+      validUntilOrDue={quotation.validUntil}
+      issueDate={quotation.issuedAt}
+      version={quotation.version}
+      fleetcoSignature={quotation.fleetcoSignature}
+      clientSignature={clientSignature}
+    />
+  );
+}
+
+function ClientQuotationReview({
+  quotation,
+  client,
+  booking,
+  isPending,
+  isExpired,
+  canDecide,
+  role,
+  signature,
+  onSignatureChange,
+  onDecline,
+  onAccept,
+}: {
+  quotation: Quotation;
+  client: ClientAccount | undefined;
+  booking: Booking | undefined;
+  isPending: boolean;
+  isExpired: boolean;
+  canDecide: boolean;
+  role: ReturnType<typeof getAdminRole>;
+  signature: string | null;
+  onSignatureChange: (value: string | null) => void;
+  onDecline: () => void;
+  onAccept: () => void;
+}) {
+  const { grandTotal } = quotationTotals(quotation);
+  const rentalPeriod = booking ? `${formatDate(booking.startDate)} – ${formatDate(booking.endDate)}` : "—";
+  const deliverySite = booking?.pickupLocation ?? "—";
+
+  return (
+    <DocumentWorkspace
+      title={quotation.id}
+      subtitle={`For ${client?.name ?? quotation.clientId} · ${quotation.bookingId}`}
+      sidebarWidth={400}
+      downloadFilename={`${quotation.id}.pdf`}
+      stick="preview"
+      mobileSidebarFirst
+      showLivePreviewLabel={false}
+      showHeader={false}
+      preview={<QuotationPreview quotation={quotation} client={client} booking={booking} clientSignature={signature} />}
+    >
+      <div className="flex items-center gap-2 p-4">
+        <FileText size={16} className="text-[var(--portal-accent)]" />
+        <h2 className="text-sm font-semibold text-slate-900">Review quotation</h2>
+      </div>
+
+      <EditorSection title="Rental details">
+        <div className="rounded-lg bg-slate-50 p-3.5">
+          <div className="space-y-2.5">
+            <ReviewRow label="Rental period" value={rentalPeriod} />
+            <ReviewRow label="Vehicle class" value={quotation.lineItems[0]?.vehicleClass ?? booking?.vehicleClassRequested ?? "—"} />
+            <ReviewRow label="Quantity" value={quotation.lineItems.reduce((sum, item) => sum + item.quantity, 0)} />
+            <ReviewRow label="Delivery site" value={deliverySite} />
+          </div>
+        </div>
+      </EditorSection>
+
+      <EditorSection title="Terms">
+        <div className="rounded-lg bg-slate-50 p-3.5">
+          <div className="space-y-2.5">
+            <ReviewRow label="Payment terms" value={quotation.paymentTerms} />
+            <ReviewRow label="Valid until" value={formatDate(quotation.validUntil)} />
+          </div>
+        </div>
+      </EditorSection>
+
+      {isPending && canDecide && (
+        <EditorSection title="Your approval" required>
+          <SignaturePad value={signature} onChange={onSignatureChange} rememberAs={role ?? undefined} />
+          <p className="mt-1.5 text-[11px] leading-relaxed text-slate-400">
+            This signature confirms Thailand Post accepts the quotation and authorizes the booking to proceed.
+          </p>
+        </EditorSection>
+      )}
+
+      <div className="sticky bottom-0 z-10 rounded-b-lg bg-white p-4">
+        <div className="mb-3 flex items-baseline justify-between gap-4">
+          <span className="text-xs text-slate-500">Grand total</span>
+          <span className="text-base font-semibold text-slate-900">{formatCurrency(grandTotal)}</span>
+        </div>
+
+        {isPending && canDecide ? (
+          <div className="flex gap-2">
+            <Button variant="outline" size="md" className="flex-1 px-2" onClick={onDecline}>
+              <Ban size={13} /> Decline
+            </Button>
+            <Button variant="primary" size="md" className="flex-1 px-2" disabled={!signature} onClick={onAccept}>
+              <Check size={13} /> Accept Quotation
+            </Button>
+          </div>
+        ) : (
+          <p className="text-[11px] leading-relaxed text-slate-400">
+            {isPending ? "Awaiting an authorized approver's decision." : isExpired ? "This quotation has expired and can no longer be actioned." : "This quotation reflects the terms as issued and can no longer be actioned."}
+          </p>
+        )}
+      </div>
+    </DocumentWorkspace>
+  );
+}
+
+export function QuotationDetail({ quotation, showExpiredNotice = true, headerNotice }: {
+  quotation: Quotation;
+  showExpiredNotice?: boolean;
+  headerNotice?: ReactNode;
+}) {
   const client = useClients().find((c) => c.id === quotation.clientId);
+  const booking = useBookings().find((item) => item.id === quotation.bookingId);
   const openBooking = useOpenBookingFromDocument();
   const role = getAdminRole();
   const [showDecline, setShowDecline] = useState(false);
-  const [showAccept, setShowAccept] = useState(false);
-  const isPending = quotation.status === "Issued";
+  const [signature, setSignature] = useState<string | null>(quotation.clientSignature ?? null);
+  const isExpired = isQuotationExpired(quotation);
+  const isPending = quotation.status === "Issued" && !isExpired;
+  const isClientPortal = role ? ROLE_PORTAL[role] === "client" : false;
   // Brief §2: accepting quotations is the Approver's job, not the
   // Requester's or Finance's; FleetCo staff viewing this never gets to
   // decide either, since it's the client's call. Everyone else still sees
   // the full document read-only.
   const canDecide = role === "client_approver" || role === "client_admin";
 
-  function handleConfirmAccept(signature: string) {
+  function handleConfirmAccept() {
+    if (!signature || !isPending || !canDecide) return;
     acceptQuotation(quotation, signature);
-    setShowAccept(false);
-    toast.success("Quotation accepted — moved to My Rentals.");
-    openBooking(quotation.bookingId);
+    toast.success(translate("Quotation accepted — this booking is now in My Rentals."));
+    // Acceptance moves the record into My Rentals. This is a completed
+    // workflow transition, not an exploratory cross-link back to the source
+    // quotation, so land in the booking's new canonical home.
+    openBooking(quotation.bookingId, { preserveOrigin: false });
   }
   function handleDecline(reason: string) {
     declineQuotation(quotation, reason);
@@ -123,6 +249,7 @@ export function QuotationDetail({ quotation }: { quotation: Quotation }) {
     // modal would stay open afterward, showing an already-submitted reason
     // with nothing left for Confirm to do.
     setShowDecline(false);
+    toast.success(translate("Quotation {id} declined.", { id: quotation.id }));
   }
 
   // Whichever of these applies is the one thing this page is passively
@@ -130,14 +257,10 @@ export function QuotationDetail({ quotation }: { quotation: Quotation }) {
   // anymore (see DeclineModal above), just what to show when there's
   // nothing to decide, or no decision to make.
   let decisionArea: React.ReactNode = null;
-  if (isPending && !canDecide) {
-    decisionArea = <p className="text-xs text-sky-700 bg-white border border-sky-100 rounded-lg px-3 py-2.5 shadow-sm">Awaiting the client's decision on this quotation.</p>;
-  } else if (!isPending) {
-    decisionArea = (
-      <p className="text-xs text-slate-500 bg-white border border-slate-200 rounded-lg px-3 py-2.5 shadow-sm flex items-center gap-2">
-        <FileText size={13} className="text-slate-400 shrink-0" /> This quotation reflects the terms as issued and can no longer be actioned.
-      </p>
-    );
+  if (!isClientPortal && isPending) {
+    decisionArea = <p className="rounded-lg border border-sky-100 bg-sky-50 px-3 py-2.5 text-xs text-sky-700">Awaiting the client's decision on this quotation.</p>;
+  } else if (!isClientPortal && isExpired && showExpiredNotice) {
+    decisionArea = <p className="rounded-lg border border-amber-100 bg-amber-50 px-3 py-2.5 text-xs text-amber-700">This quotation has expired. Issue a revised quotation before asking the client to approve it.</p>;
   }
 
   return (
@@ -153,7 +276,7 @@ export function QuotationDetail({ quotation }: { quotation: Quotation }) {
           <div className="min-w-0">
             <div className="flex items-center gap-3 flex-wrap">
               <h1 className="text-lg font-semibold text-slate-900 truncate">{quotation.id}{quotation.version > 1 ? ` (v${quotation.version})` : ""}</h1>
-              <StatusBadge status={quotation.status} />
+              <StatusBadge status={quotationDisplayStatus(quotation)} />
             </div>
             {/* Doc-type label deliberately dropped from here — it's already
                 this page's persistent header title (usePageHeader in
@@ -172,81 +295,32 @@ export function QuotationDetail({ quotation }: { quotation: Quotation }) {
               For <button onClick={() => openBooking(quotation.bookingId)} className="text-xs underline decoration-dotted hover:text-slate-800 cursor-pointer">{quotation.bookingId}</button>
             </p>
           </div>
-          {isPending && canDecide && (
-            <div className="flex items-center gap-2 shrink-0">
-              <button
-                onClick={() => setShowDecline(true)}
-                className="flex items-center gap-1.5 h-8 px-3 border border-slate-200 rounded-lg text-xs font-medium text-slate-600 hover:bg-slate-50 cursor-pointer"
-              >
-                <Ban size={13} /> Decline
-              </button>
-              <button
-                onClick={() => setShowAccept(true)}
-                className="flex items-center gap-1.5 h-8 px-3 bg-[var(--portal-accent)] text-white rounded-lg text-xs font-medium hover:bg-[var(--portal-accent-hover)] cursor-pointer"
-              >
-                <Check size={13} /> Accept Quotation
-              </button>
-            </div>
-          )}
         </div>
-        {decisionArea && <div className="mt-4 max-w-xl">{decisionArea}</div>}
+        {decisionArea && <div className="mt-4 w-full">{decisionArea}</div>}
+        {headerNotice && <div className="mt-4 w-full">{headerNotice}</div>}
       </div>
 
-      {/* Document toolbar — just Print, right-aligned above the scrollable
-          frame below rather than inside it, so it's always visible without
-          needing real position:sticky; it's simply outside the box that
-          scrolls. Plain text control, not a boxed button — this is a
-          secondary, incidental action sitting next to the document, not a
-          primary one competing with Accept/Decline above it. Doc id/version
-          dropped from here too — it's already the page's H1 a few lines up,
-          repeating it here added nothing. */}
-      <div className="flex justify-end mb-2 print:hidden">
-        <button
-          onClick={() => window.print()}
-          className="flex items-center gap-1.5 text-xs font-medium text-slate-500 hover:text-slate-800 cursor-pointer"
-        >
-          <Printer size={13} /> Print / Download PDF
-        </button>
-      </div>
-
-      {/* The document frame — fills the page's own width now (no more
-          max-w-4xl cap forcing it narrow); the A4 sheet inside keeps its
-          own fixed 210mm regardless and just centers in whatever room this
-          gives it, same as a real page sitting on a wider desk. Fixed
-          height + its own scroll, not the whole page's — a full A4 sheet
-          is taller than most viewports, and scrolling the entire page to
-          read it would carry the toolbar and header away with it. print:
-          overrides all of this back to plain flow, since none of it
-          means anything on paper. */}
-      <div className="bg-slate-200 rounded-2xl overflow-hidden print:bg-white print:rounded-none">
-        <div className="p-4 sm:p-8 print:p-0 h-[75vh] print:h-auto overflow-y-auto print:overflow-visible">
-          {/* The document itself — same shape as A4Preview (issuing side),
-              rendered through the same A4Document pagination component so
-              a long quotation splits into real pages instead of either
-              clipping or spilling past the sheet's bottom edge, both on
-              screen and (matching, not independently reflowed) in print. */}
-          <CommercialDocument
-            mode="quotation"
-            docNumber={quotation.id}
-            client={client}
-            booking={undefined}
-            bookingId={quotation.bookingId}
-            lineItems={quotation.lineItems}
-            discount={quotation.discount}
-            vatRate={quotation.vatRate}
-            remarks={quotation.remarks}
-            paymentTerms={quotation.paymentTerms}
-            validUntilOrDue={quotation.validUntil}
-            issueDate={quotation.issuedAt}
-            version={quotation.version}
-            fleetcoSignature={quotation.fleetcoSignature}
-            clientSignature={quotation.clientSignature}
-          />
-        </div>
-      </div>
+      {isClientPortal ? (
+        <ClientQuotationReview
+          quotation={quotation}
+          client={client}
+          booking={booking}
+          isPending={isPending}
+          isExpired={isExpired}
+          canDecide={canDecide}
+          role={role}
+          signature={signature}
+          onSignatureChange={setSignature}
+          onDecline={() => setShowDecline(true)}
+          onAccept={handleConfirmAccept}
+        />
+      ) : (
+        <DocumentPreviewFrame downloadFilename={`${quotation.id}.pdf`} className={DOCUMENT_PREVIEW_FRAME_CLASS}>
+          <QuotationPreview quotation={quotation} client={client} booking={booking} />
+        </DocumentPreviewFrame>
+      )}
 
       {showDecline && <DeclineModal onCancel={() => setShowDecline(false)} onConfirm={handleDecline} />}
-      {showAccept && <AcceptModal onCancel={() => setShowAccept(false)} onConfirm={handleConfirmAccept} />}
     </div>
   );
 }

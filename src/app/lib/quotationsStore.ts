@@ -7,7 +7,21 @@ import { loadPersisted, mergeSeedRecords, savePersisted, scopeToThailandPost, su
 
 type Listener = () => void;
 
-let quotations: Quotation[] = scopeToThailandPost(mergeSeedRecords(loadPersisted("quotations", [...mockQuotations]), mockQuotations));
+// Keep the operational condition in the quotation remarks, not in the
+// structured payment-term label. This one-time compatibility migration also
+// fixes demo data already persisted by an earlier version of the seed.
+function migrateQuotation(quotation: Quotation): Quotation {
+  if (quotation.id === "QT-2026-0013" && quotation.paymentTerms === "Net 14 from invoice date — due before pickup.") {
+    return { ...quotation, paymentTerms: "Net 14 from invoice date" };
+  }
+  return quotation;
+}
+
+function migrateQuotations(records: Quotation[]): Quotation[] {
+  return records.map(migrateQuotation);
+}
+
+let quotations: Quotation[] = migrateQuotations(scopeToThailandPost(mergeSeedRecords(loadPersisted("quotations", [...mockQuotations]), mockQuotations)));
 const listeners = new Set<Listener>();
 
 function notify() {
@@ -17,7 +31,7 @@ function notify() {
 
 // Cross-tab live sync — see persistence.ts.
 subscribePersisted<Quotation[]>("quotations", (value) => {
-  quotations = scopeToThailandPost(value);
+  quotations = migrateQuotations(scopeToThailandPost(value));
   notify();
 });
 

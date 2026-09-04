@@ -6,6 +6,7 @@ import { Toaster } from "sonner";
 import { Menu } from "lucide-react";
 import { getAdminRole, ROLE_PORTAL } from "@/app/lib/auth";
 import { usePageHeaderValue } from "@/app/lib/pageHeaderStore";
+import { LanguageToggle, useI18n } from "@/app/i18n";
 
 const pageTitles: Record<string, { title: string; subtitle: string }> = {
   // FleetCo Operations Portal
@@ -14,7 +15,7 @@ const pageTitles: Record<string, { title: string; subtitle: string }> = {
   "/ops/requests":                { title: "All Requests",           subtitle: "Bookings & Schedule" },
   "/ops/rentals":                 { title: "All Rentals",            subtitle: "Bookings & Schedule" },
   "/ops/calendar":                { title: "Fleet Calendar",         subtitle: "Bookings & Schedule" },
-  "/ops/documents/quotations":    { title: "Quotations",             subtitle: "Bookings & Schedule" },
+  "/ops/documents/quotations":    { title: "Quotations",             subtitle: "Billing" },
   "/ops/fleet":                   { title: "Vehicles",               subtitle: "Fleet" },
   "/ops/drivers":                 { title: "Driver Roster",          subtitle: "Fleet" },
   "/ops/tracking":                { title: "Live Map",               subtitle: "Fleet" },
@@ -26,6 +27,7 @@ const pageTitles: Record<string, { title: string; subtitle: string }> = {
   "/ops/admin/roles":             { title: "Roles & Permissions",    subtitle: "Admin" },
   "/ops/admin/notifications":     { title: "Notifications",          subtitle: "Admin" },
   "/ops/admin/audit-log":         { title: "Audit Log",              subtitle: "Admin" },
+  "/ops/account":                 { title: "Account Settings",       subtitle: "System" },
 
   // Client Self-Service Portal
   "/portal/dashboard":              { title: "Overview",             subtitle: "Dashboard" },
@@ -34,10 +36,14 @@ const pageTitles: Record<string, { title: string; subtitle: string }> = {
   "/portal/tracking":               { title: "Live Map",             subtitle: "Rentals" },
   "/portal/documents/invoices":     { title: "Invoices & Payments",  subtitle: "Billing" },
   "/portal/billing-history":        { title: "Billing History",      subtitle: "Reports" },
+  "/portal/account":                 { title: "Account Settings",     subtitle: "System" },
 };
 
 export function Layout() {
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(() =>
+    typeof window === "undefined" || window.matchMedia("(min-width: 1024px)").matches,
+  );
+  const { language } = useI18n();
   const location = useLocation();
   // A detail page (booking, quotation, ...) registers its own title/
   // subtitle via usePageHeader once it's resolved its own data — takes
@@ -48,7 +54,7 @@ export function Layout() {
   const portal = role ? ROLE_PORTAL[role] : "fleetco";
 
   return (
-    <div className="h-screen bg-slate-50 flex overflow-hidden" data-portal={portal}>
+    <div className="h-screen bg-slate-50 flex overflow-hidden" data-portal={portal} data-language={language}>
       <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
       {/* Main content — scroll container lives here, not on html/body.
@@ -63,6 +69,9 @@ export function Layout() {
         <header className="sticky top-0 z-30 bg-white border-b border-slate-200 px-4 lg:px-6 h-14 flex items-center gap-4 shrink-0">
           <button
             onClick={() => setSidebarOpen((o) => !o)}
+            aria-label={sidebarOpen ? "Collapse navigation" : "Expand navigation"}
+            aria-expanded={sidebarOpen}
+            aria-controls="app-sidebar"
             className="text-slate-500 hover:text-slate-700 transition-colors"
           >
             <Menu size={20} />
@@ -75,6 +84,7 @@ export function Layout() {
             )}
           </div>
 
+          <LanguageToggle compact />
           <NotificationBell portal={portal} />
         </header>
 
@@ -83,7 +93,18 @@ export function Layout() {
           <Outlet />
         </main>
       </div>
-      <Toaster position="bottom-right" duration={2000} />
+      <Toaster
+        position="bottom-right"
+        duration={3000}
+        visibleToasts={1}
+        toastOptions={{
+          className: "fleetco-toast",
+          classNames: {
+            success: "fleetco-toast-success",
+            error: "fleetco-toast-error",
+          },
+        }}
+      />
     </div>
   );
 }

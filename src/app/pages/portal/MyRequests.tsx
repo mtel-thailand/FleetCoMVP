@@ -2,9 +2,9 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import { ClipboardList, FilePlus2 } from "lucide-react";
 import { usePersistentListState } from "@/app/hooks/usePersistentListState";
-import { bookingStatusLabel, REQUEST_STATUSES, type Booking } from "@/app/data/bookings";
+import { bookingQuotations, bookingStatusLabel, isRequestBooking, type Booking } from "@/app/data/bookings";
 import { BOOKING_STATUS_PRIORITY } from "@/app/data/bookingStatus";
-import { quotationTotals, type Quotation } from "@/app/data/quotations";
+import { isQuotationExpired, quotationTotals, type Quotation } from "@/app/data/quotations";
 import { StatusBadge } from "@/app/components/ui/StatusBadge";
 import { EmptyState } from "@/app/components/ui/EmptyState";
 import { FilterBar } from "@/app/components/ui/FilterBar";
@@ -29,32 +29,78 @@ type SortKey = "startDate" | "status" | "updated";
 type SortDir = "asc" | "desc";
 type RequestView = "open" | "action" | "closed" | "all";
 
-function matchesRequestView(booking: Booking, view: RequestView) {
-  if (view === "open") return booking.status === "Requested" || booking.status === "Quoted";
-  if (view === "action") return booking.status === "Quoted";
-  if (view === "closed") return booking.status === "Declined" || booking.status === "Cancelled";
+function matchesRequestView(booking: Booking, view: RequestView, quotations: Quotation[]) {
+  const latestQuotation = bookingQuotations(booking.id, quotations)[0];
+  const quotationExpired = booking.status === "Quoted" && !!latestQuotation && isQuotationExpired(latestQuotation);
+  const activeQuotation = booking.status === "Quoted" && !quotationExpired;
+  if (view === "open") return booking.status === "Requested" || activeQuotation;
+  if (view === "action") return activeQuotation && latestQuotation?.status === "Issued";
+  if (view === "closed") return quotationExpired || booking.status === "Declined" || booking.status === "Cancelled";
   return true;
 }
 
+function clientRequestStatusLabel(booking: Booking, quotation: Quotation | undefined): string {
+  // The quotation expired, so the request is closed from the client's point
+  // of view even though the underlying booking remains Quoted for audit and
+  // FleetCo's revision flow.
+  if (booking.status === "Quoted" && quotation && isQuotationExpired(quotation)) return "Expired";
+  return bookingStatusLabel(booking);
+}
+
 function RequestsTable({
-  requests, quotations, onOpen, sortKey, sortDir, onSort,
+  requests, quotations, onOpen, sortKey, sortDir, onSort, emptyStateMessage,
 }: {
   requests: Booking[]; quotations: Quotation[]; onOpen: (id: string) => void;
   sortKey: SortKey; sortDir: SortDir; onSort: (key: SortKey) => void;
+  emptyStateMessage: string;
 }) {
   return (
-    <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+    <>
+      <div className="space-y-2 md:hidden">
+        {requests.map((booking) => {
+          const quotation = bookingQuotations(booking.id, quotations)[0];
+          return (
+            <button
+              key={booking.id}
+              type="button"
+              onClick={() => onOpen(booking.id)}
+              className="w-full rounded-xl border border-slate-200 bg-white p-4 text-left shadow-sm focus:outline-none focus:ring-2 focus:ring-[var(--portal-accent)]"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <span className="text-sm font-semibold text-[var(--portal-accent)]">{booking.id}</span>
+                <StatusBadge status={clientRequestStatusLabel(booking, quotation)} />
+              </div>
+              <p className="mt-2 text-xs font-medium text-slate-800">{booking.vehicleClassRequested} × {booking.quantity}</p>
+              <p className="mt-1 text-xs text-slate-500">{formatDate(booking.startDate)} → {formatDate(booking.endDate)}</p>
+              <p className="mt-1 truncate text-xs text-slate-500">{booking.pickupLocation}</p>
+              <div className="mt-3 border-t border-slate-100 pt-3 text-xs">
+                {quotation ? (
+                  <span className="text-slate-600">{quotation.id} · <span className="font-semibold text-slate-800">{formatCurrency(quotationTotals(quotation).grandTotal)}</span></span>
+                ) : booking.status === "Requested" ? (
+                  <span className="text-slate-400">Awaiting quotation</span>
+                ) : (
+                  <span className="text-slate-400">No quotation</span>
+                )}
+              </div>
+            </button>
+          );
+        })}
+        {requests.length === 0 && <div className="rounded-xl border border-slate-200 bg-white py-10 text-center text-sm text-slate-400">{emptyStateMessage}</div>}
+      </div>
+
+    <div className="hidden bg-white rounded-xl border border-slate-200 overflow-hidden md:block">
       <div className="overflow-x-auto relative">
         {/* table-fixed + colgroup, same as RequestInbox.tsx on the FleetCo
             side — sticky positioning on the Status column needs fixed,
             predictable column widths to stay lined up while scrolling. */}
-        <table className="w-full table-fixed text-sm" style={{ minWidth: "1090px" }}>
+        <table className="w-full table-fixed text-sm" style={{ minWidth: "1120px" }}>
           <colgroup>
             <col style={{ width: "110px" }} />
             <col style={{ width: "100px" }} />
             <col style={{ width: "120px" }} />
             <col style={{ width: "60px" }} />
-            <col style={{ width: "190px" }} />
+            <col style={{ width: "110px" }} />
+            <col style={{ width: "110px" }} />
             <col style={{ width: "200px" }} />
             <col style={{ width: "200px" }} />
             <col style={{ width: "110px" }} />
@@ -68,35 +114,41 @@ function RequestsTable({
               {["ID", "Rental Type", "Vehicle Class", "Qty"].map((h) => (
                 <th key={h} className="text-left text-xs font-medium text-slate-400 px-4 py-2.5 whitespace-nowrap">{h}</th>
               ))}
-              <th
-                className="text-left text-xs font-medium text-slate-400 px-4 py-2.5 whitespace-nowrap cursor-pointer select-none hover:text-slate-600"
-                onClick={() => onSort("startDate")}
-              >
-                <span className="inline-flex items-center gap-1">Rental Period<SortIndicator active={sortKey === "startDate"} direction={sortDir} /></span>
+              <th className="text-left text-xs font-medium text-slate-400 px-4 py-2.5 whitespace-nowrap">
+                <button type="button" onClick={() => onSort("startDate")} className="inline-flex items-center gap-1 text-xs font-medium text-slate-400 hover:text-slate-600">
+                  Start Date<SortIndicator active={sortKey === "startDate"} direction={sortDir} />
+                </button>
               </th>
-              {["Branch Location", "Quotation"].map((h) => (
+              <th className="text-left text-xs font-medium text-slate-400 px-4 py-2.5 whitespace-nowrap">End Date</th>
+              {["Delivery Site", "Quotation"].map((h) => (
                 <th key={h} className="text-left text-xs font-medium text-slate-400 px-4 py-2.5 whitespace-nowrap">{h}</th>
               ))}
-              <th
-                className="sticky right-0 bg-slate-50 border-l border-slate-100 z-10 text-left text-xs font-medium text-slate-400 px-4 py-2.5 whitespace-nowrap cursor-pointer select-none hover:text-slate-600"
-                onClick={() => onSort("status")}
-              >
-                <span className="inline-flex items-center gap-1">Status<SortIndicator active={sortKey === "status"} direction={sortDir} /></span>
+              <th className="sticky right-0 bg-slate-50 border-l border-slate-100 z-10 text-left text-xs font-medium text-slate-400 px-4 py-2.5 whitespace-nowrap">
+                <button type="button" onClick={() => onSort("status")} className="inline-flex items-center gap-1 text-xs font-medium text-slate-400 hover:text-slate-600">
+                  Status<SortIndicator active={sortKey === "status"} direction={sortDir} />
+                </button>
               </th>
             </tr>
           </thead>
           <tbody>
             {requests.map((booking) => {
-              const quotation = booking.quotationId ? quotations.find((q) => q.id === booking.quotationId) : undefined;
+              const quotation = bookingQuotations(booking.id, quotations)[0];
               return (
-                <tr key={booking.id} className="border-b border-slate-50 hover:bg-slate-50 cursor-pointer" onClick={() => onOpen(booking.id)}>
-                  <td className="px-4 py-3 text-xs font-medium text-[var(--portal-accent)] whitespace-nowrap">{booking.id}</td>
+                <tr key={booking.id} className="border-b border-slate-50 group hover:bg-slate-50 cursor-pointer" onClick={() => onOpen(booking.id)}>
+                  <td className="px-4 py-3 whitespace-nowrap">
+                    <button
+                      type="button"
+                      onClick={(event) => { event.stopPropagation(); onOpen(booking.id); }}
+                      className="text-xs font-medium text-[var(--portal-accent)] underline-offset-2 hover:underline focus:outline-none focus:ring-2 focus:ring-[var(--portal-accent)]"
+                    >
+                      {booking.id}
+                    </button>
+                  </td>
                   <td className="px-4 py-3 text-xs text-slate-600 whitespace-nowrap">{booking.rentalType}</td>
                   <td className="px-4 py-3 text-xs text-slate-600 whitespace-nowrap">{booking.vehicleClassRequested}</td>
                   <td className="px-4 py-3 text-xs text-slate-600 whitespace-nowrap">{booking.quantity}</td>
-                  <td className="px-4 py-3 text-xs text-slate-600 whitespace-nowrap">
-                    {formatDate(booking.startDate)} → {formatDate(booking.endDate)}
-                  </td>
+                  <td className="px-4 py-3 text-xs text-slate-600 whitespace-nowrap">{formatDate(booking.startDate)}</td>
+                  <td className="px-4 py-3 text-xs text-slate-600 whitespace-nowrap">{formatDate(booking.endDate)}</td>
                   <td className="px-4 py-3 text-xs text-slate-600 truncate">{booking.pickupLocation}</td>
                   <td className="px-4 py-3 text-xs whitespace-nowrap">
                     {quotation ? (
@@ -115,8 +167,8 @@ function RequestsTable({
                       <span className="text-slate-300">—</span>
                     )}
                   </td>
-                  <td className="sticky right-0 bg-white border-l border-slate-100 px-4 py-3 whitespace-nowrap">
-                    <StatusBadge status={bookingStatusLabel(booking)} />
+                  <td className="sticky right-0 bg-white group-hover:bg-slate-50 border-l border-slate-100 px-4 py-3 whitespace-nowrap">
+                    <StatusBadge status={clientRequestStatusLabel(booking, quotation)} />
                   </td>
                 </tr>
               );
@@ -124,8 +176,9 @@ function RequestsTable({
           </tbody>
         </table>
       </div>
-      {requests.length === 0 && <div className="text-center py-12 text-slate-400 text-sm">No requests match your filters</div>}
+      {requests.length === 0 && <div className="text-center py-12 text-slate-400 text-sm">{emptyStateMessage}</div>}
     </div>
+    </>
   );
 }
 
@@ -154,14 +207,14 @@ export function MyRequests() {
     if (sessionStorage.getItem("repeatBookingId")) setShowRequestModal(true);
   }, []);
 
-  const requests = allBookings.filter((b) => b.clientId === CLIENT_ID && REQUEST_STATUSES.includes(b.status));
+  const requests = allBookings.filter((b) => b.clientId === CLIENT_ID && isRequestBooking(b));
 
   // Keep the default view focused on live work while preserving completed
   // history in Closed and the full audit trail in All.
   const tabOptions = [
-    { value: "open", label: "Open", count: requests.filter((b) => matchesRequestView(b, "open")).length },
-    { value: "action", label: "Action Required", count: requests.filter((b) => matchesRequestView(b, "action")).length, highlight: true },
-    { value: "closed", label: "Closed", count: requests.filter((b) => matchesRequestView(b, "closed")).length },
+    { value: "open", label: "Open", count: requests.filter((b) => matchesRequestView(b, "open", quotations)).length },
+    { value: "action", label: "Awaiting Your Response", count: requests.filter((b) => matchesRequestView(b, "action", quotations)).length, highlight: true },
+    { value: "closed", label: "Closed", count: requests.filter((b) => matchesRequestView(b, "closed", quotations)).length },
     { value: "all", label: "All", count: requests.length },
   ];
 
@@ -177,22 +230,22 @@ export function MyRequests() {
   const query = search.trim().toLowerCase();
   const filtered = requests.filter((b) => {
     const matchSearch = !query || b.id.toLowerCase().includes(query) || b.pickupLocation.toLowerCase().includes(query);
-    const matchView = matchesRequestView(b, requestView);
+    const matchView = matchesRequestView(b, requestView, quotations);
     const matchType = !typeFilter || b.rentalType === typeFilter;
     return matchSearch && matchView && matchType;
   });
   // "updated" (this list's default order) has no column of its own to sort
   // by, same as RequestInbox.tsx on the FleetCo side — only the two real
-  // headers below (Rental Period, Status) are actually clickable. Defaults
+  // headers below (Start Date, Status) are actually clickable. Defaults
   // to most-recently-changed first rather than most-recently-submitted, so
   // a request that was just quoted today surfaces even if it's weeks old.
   //
   // No more "Quoted floats to the top of Open regardless of recency" bump
-  // here — that's what the Action Required tab is for now. A plain,
+  // here — that's what the Awaiting Your Response tab is for now. A plain,
   // consistent recency order across every tab means a client who just
   // submitted a new request actually sees it land at the top, instead of
   // finding it buried under an older Quoted one they can already reach in
-  // one click via Action Required.
+  // one click via Awaiting Your Response.
   const sorted =
     sortKey === "status"
       ? sortByStatusWithDate(filtered, "status", BOOKING_STATUS_PRIORITY, sortDir, "updated")
@@ -237,8 +290,7 @@ export function MyRequests() {
             onChange={(value) => setRequestView(value as RequestView)}
           />
           <FilterBar
-            showPeriod={false}
-            searchableFields={["ID", "Branch Location"]}
+            searchableFields={["ID", "Delivery Site"]}
             onSearch={setSearch}
             defaultSearch={search}
             trailing={newRequestButton}
@@ -260,6 +312,7 @@ export function MyRequests() {
             sortKey={sortKey}
             sortDir={sortDir}
             onSort={handleSort}
+            emptyStateMessage={requestView === "action" ? "No quotations are awaiting your response" : "No requests match your filters"}
           />
         </>
       )}

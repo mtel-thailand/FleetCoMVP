@@ -20,7 +20,7 @@ export type VehiclePosition = {
   routeToday: [number, number][]; // [lat, lng] breadcrumb for today's trip
 };
 
-// The two "live" (stale: false) positions below stamp their timestamp
+// The live (stale: false) position below stamps its timestamp
 // relative to page-load time rather than a hardcoded string. A fixed string
 // reads fine the day it's written, but a few real days of wall-clock time
 // later it quietly turns into "stale-looking data flagged as fresh" — e.g.
@@ -37,21 +37,17 @@ function minutesAgo(mins: number): string {
 
 export const mockVehiclePositions: VehiclePosition[] = [
   {
-    // VEH-001 — on BK-2026-0005, same-day Bang Na overflow delivery.
+    // VEH-001 — last known position from completed BK-2026-0005. It is now
+    // reserved for a later assignment, so this must not appear as live GPS.
     vehicleId: "VEH-001",
-    bookingId: "BK-2026-0005",
+    bookingId: null,
     lat: 13.6690,
     lng: 100.6050,
     speedKmh: 42,
     headingDeg: 135,
-    timestamp: minutesAgo(18),
-    stale: false,
-    routeToday: [
-      [13.6822, 100.6280],
-      [13.6765, 100.6190],
-      [13.6710, 100.6110],
-      [13.6690, 100.6050],
-    ],
+    timestamp: "2026-08-14 17:55",
+    stale: true,
+    routeToday: [],
   },
   {
     // VEH-005 — on BK-2026-0004, long-term dedicated Nonthaburi loop.
@@ -72,9 +68,10 @@ export const mockVehiclePositions: VehiclePosition[] = [
   },
   {
     // VEH-007 — last trip ended 4 Aug (BK-2026-0007, Completed); signal is
-    // stale on purpose, to demonstrate the graceful-degradation case.
+    // stale on purpose, to demonstrate graceful degradation. It is now
+    // reserved for a later assignment, so there is no active booking link.
     vehicleId: "VEH-007",
-    bookingId: "BK-2026-0007",
+    bookingId: null,
     lat: 13.8140,
     lng: 100.5380,
     speedKmh: 0,

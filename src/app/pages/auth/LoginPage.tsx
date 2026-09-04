@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { useNavigate, Navigate } from "react-router";
+import { Modal, ModalTitle } from "@/app/components/ui/Modal";
+import { useNavigate, Navigate, Link } from "react-router";
 import { EyeOff, Eye, Truck, Building2, ChevronRight } from "lucide-react";
 import fleetcoLogo from "@/assets/fleetco-logo.svg";
 import thailandPostLogo from "@/assets/thailand-post-logo.png";
@@ -12,6 +13,7 @@ import {
   ROLE_DEFAULT,
   type AdminRole,
 } from "@/app/lib/auth";
+import { LanguageToggle, useI18n } from "@/app/i18n";
 
 // ── Role selection modal ────────────────────────────────────────────────────
 // Demo-mode only: in production each portal has its own login/SSO and the
@@ -58,13 +60,22 @@ function RoleModal({ portal, onClose, onSelect }: { portal: Portal; onClose: () 
   const [selected, setSelected] = useState<AdminRole>(roles[0]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" data-portal={portal} onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden" onClick={(e) => e.stopPropagation()}>
+    <Modal
+      onClose={onClose}
+      overlayClassName="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      contentClassName="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden"
+      // data-portal drives the accent-colour override in theme.css. It has to stay
+      // on the overlay itself: Modal portals this out to document.body, so the
+      // attribute no longer inherits from the page wrapper the way it did when
+      // this overlay was rendered inline.
+      overlayProps={{ "data-portal": portal }}
+
+    >
         <div className="px-6 pt-6 pb-4 border-b border-slate-100">
           <p className="text-xs font-semibold uppercase tracking-widest text-[var(--portal-accent)] mb-1">Demo Mode</p>
-          <h2 className="text-slate-900 text-lg font-semibold">
+          <ModalTitle asChild><h2 className="text-slate-900 text-lg font-semibold">
             {portal === "fleetco" ? "Sign in as — FleetCo Team" : "Sign in as — Thailand Post"}
-          </h2>
+          </h2></ModalTitle>
           <p className="text-slate-400 text-sm mt-1">In production this comes from the account, not a picker.</p>
         </div>
 
@@ -99,14 +110,14 @@ function RoleModal({ portal, onClose, onSelect }: { portal: Portal; onClose: () 
             Continue <ChevronRight size={16} />
           </button>
         </div>
-      </div>
-    </div>
+      </Modal>
   );
 }
 
 // ── Login page ────────────────────────────────────────────────────────────
 
 export function LoginPage() {
+  const { t } = useI18n();
   const navigate = useNavigate();
   // Demo mode only — pre-filled so the common path is just "hit Log in".
   // Real credential fields obviously wouldn't ship pre-populated like this.
@@ -124,7 +135,7 @@ export function LoginPage() {
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (password !== getStoredPassword()) {
-      setError("Invalid username or password");
+      setError(t("Invalid username or password"));
       return;
     }
     setError("");
@@ -164,7 +175,11 @@ export function LoginPage() {
               : "radial-gradient(circle at 20% 20%, rgba(136,19,55,0.22), transparent 40%), radial-gradient(circle at 80% 80%, rgba(136,19,55,0.18), transparent 40%)",
         }}
       >
-        <div className="relative z-10 flex items-center">
+        <div className="absolute top-4 right-4 z-10">
+          <LanguageToggle inverse />
+        </div>
+
+        <div className="relative z-10 flex items-center gap-2">
           <PortalToggle value={portal} onChange={setPortal} />
         </div>
 
@@ -218,6 +233,7 @@ export function LoginPage() {
               <button
                 type="button"
                 onClick={() => setShowPassword((v) => !v)}
+                aria-label={showPassword ? "Hide password" : "Show password"}
                 className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
               >
                 {showPassword ? <Eye size={16} /> : <EyeOff size={16} />}

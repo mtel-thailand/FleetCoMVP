@@ -3,6 +3,27 @@
 @import './theme.css';
 @import './print.css';
 
+html {
+  font-family: Inter, "Noto Sans Thai", Thonburi, "Leelawadee UI", Tahoma, ui-sans-serif, system-ui, sans-serif;
+}
+
+/* Sonner exposes its own live region; these classes make temporary feedback
+   feel like part of FleetCo while leaving its accessible announcement and
+   keyboard behaviour intact. */
+.fleetco-toast {
+  border-color: rgb(226 232 240) !important;
+  border-radius: 0.75rem !important;
+  box-shadow: 0 12px 28px rgb(15 23 42 / 0.16) !important;
+  font-family: inherit !important;
+}
+
+.fleetco-toast-success [data-icon] {
+  color: rgb(5 150 105) !important;
+}
+
+.fleetco-toast-error [data-icon] {
+  color: rgb(225 29 72) !important;
+}
 
 /* Global scrollbars */
 * {
@@ -50,4 +71,40 @@
 .overflow-x-auto table :is(th, td)[class*="sticky"][class*="right-"][class*="border-l"] {
   border-left-color: transparent;
   box-shadow: inset 1px 0 0 rgb(241 245 249);
+}
+
+/* Keep range endpoints as independent 32px squares while restoring the
+   continuous highlight between them. The connector lives behind each button
+   and occupies only the inward half of an endpoint cell, so it never becomes
+   visible as a pink halo around the outside edge of the square. */
+.calendar-range-cell {
+  position: relative;
+  isolation: isolate;
+}
+
+.calendar-has-range .calendar-range-cell:has(> .calendar-range-middle)::before,
+.calendar-has-range .calendar-range-cell:has(> .calendar-range-start)::after,
+.calendar-has-range .calendar-range-cell:has(> .calendar-range-end)::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: var(--portal-accent-light);
+}
+
+.calendar-has-range .calendar-range-cell:has(> .calendar-range-middle)::before {
+  left: 0;
+  right: 0;
+}
+
+.calendar-has-range .calendar-range-cell:has(> .calendar-range-start)::after {
+  left: 50%;
+  right: 0;
+}
+
+.calendar-has-range .calendar-range-cell:has(> .calendar-range-end)::before {
+  left: 0;
+  right: 50%;
 }

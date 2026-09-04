@@ -1,6 +1,9 @@
-import { useNavigate, useParams } from "react-router";
+import { useLocation, useNavigate, useParams } from "react-router";
+import { Button } from "@/app/components/ui/Button";
 import { ArrowLeft, FileQuestion } from "lucide-react";
 import { useQuotations } from "@/app/lib/quotationsStore";
+import { useBookings } from "@/app/lib/bookingsStore";
+import { bookingNavPath } from "@/app/data/bookings";
 import { CLIENT_ID } from "@/app/lib/currentClient";
 import { QuotationDetail } from "@/app/components/documents/QuotationDetail";
 import { EmptyState } from "@/app/components/ui/EmptyState";
@@ -20,9 +23,30 @@ import { usePageHeader } from "@/app/lib/pageHeaderStore";
 export function QuotationDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const quotations = useQuotations();
+  const bookings = useBookings();
 
   const quotation = quotations.find((q) => q.id === id && q.clientId === CLIENT_ID);
+  const routeState = location.state as { fromBookingId?: string; navPath?: string; returnTo?: string; returnLabel?: string; returnState?: unknown } | null;
+  const fallbackPath = bookingNavPath(quotation?.bookingId, bookings, "client") ?? "/portal/requests";
+  const fallbackLabel = fallbackPath === "/portal/rentals" ? "My Rentals" : "My Requests";
+
+  function handleBack() {
+    if (routeState?.returnTo?.startsWith("/portal/")) {
+      navigate(routeState.returnTo, { state: routeState.returnState });
+      return;
+    }
+    if (routeState?.fromBookingId) {
+      navigate(`/portal/bookings/${routeState.fromBookingId}`, { state: routeState.returnState });
+      return;
+    }
+    if (routeState?.navPath?.startsWith("/portal/")) {
+      navigate(routeState.navPath);
+      return;
+    }
+    navigate(fallbackPath);
+  }
 
   // Header leads with what kind of document this is rather than the
   // document's own id (the reverse of BookingDetail's header, one level
@@ -33,12 +57,11 @@ export function QuotationDetailPage() {
 
   return (
     <div>
-      <button
-        onClick={() => navigate(-1)}
-        className="flex items-center gap-1.5 text-xs font-medium text-slate-500 hover:text-slate-800 mb-4 cursor-pointer"
+      <Button variant="ghost" size="icon" className="flex items-center gap-1.5 text-xs mb-4"
+        onClick={handleBack}
       >
-        <ArrowLeft size={14} /> Back
-      </button>
+        <ArrowLeft size={14} /> {routeState?.returnTo && routeState.returnLabel ? `Back to ${routeState.returnLabel}` : routeState?.fromBookingId ? "Back to Booking" : `Back to ${fallbackLabel}`}
+      </Button>
 
       {quotation ? (
         <QuotationDetail quotation={quotation} />

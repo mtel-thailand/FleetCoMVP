@@ -1,9 +1,10 @@
 // Cross-tab persistence for the demo stores — localStorage specifically,
 // not sessionStorage, because it's shared across every tab/window on the
 // same origin. That covers both things this demo needs: state survives a
-// reload (so a dev-server WebSocket hiccup or an accidental F5 doesn't
-// silently wipe a walkthrough back to seed data — "Reset Demo Data" in the
-// Sidebar is now the only intentional way back to a clean slate), and two
+// reload during the same demo day (so a dev-server WebSocket hiccup or an
+// accidental F5 doesn't silently wipe a walkthrough). Saved state is dated:
+// the next calendar day's first load falls back to freshly rebased seeds,
+// while "Reset Demo Data" remains the explicit same-day reset. Two
 // tabs opened side by side — FleetCo ops in one window, Thailand Post
 // client portal in another — see the same live data.
 //
@@ -17,12 +18,27 @@
 // point of two tabs is being signed in as *different* roles in each at
 // once; syncing who's logged in across tabs would break that immediately.
 
+import { demoToday } from "@/app/data/demoDates";
+
 const PREFIX = "fleetco_demo:";
+const DEMO_STORAGE_DATE = demoToday();
+
+type PersistedEnvelope<T> = {
+  demoDate: string;
+  value: T;
+};
+
+function currentEnvelopeValue<T>(parsed: unknown): T | undefined {
+  if (!parsed || typeof parsed !== "object") return undefined;
+  const envelope = parsed as Partial<PersistedEnvelope<T>>;
+  return envelope.demoDate === DEMO_STORAGE_DATE && "value" in envelope ? envelope.value : undefined;
+}
 
 export function loadPersisted<T>(key: string, fallback: T): T {
   try {
     const raw = localStorage.getItem(PREFIX + key);
-    return raw ? (JSON.parse(raw) as T) : fallback;
+    if (!raw) return fallback;
+    return currentEnvelopeValue<T>(JSON.parse(raw)) ?? fallback;
   } catch {
     return fallback;
   }
@@ -30,7 +46,8 @@ export function loadPersisted<T>(key: string, fallback: T): T {
 
 export function savePersisted<T>(key: string, value: T): void {
   try {
-    localStorage.setItem(PREFIX + key, JSON.stringify(value));
+    const envelope: PersistedEnvelope<T> = { demoDate: DEMO_STORAGE_DATE, value };
+    localStorage.setItem(PREFIX + key, JSON.stringify(envelope));
   } catch {
     // Private-browsing storage caps, quota exceeded, etc. — the demo just
     // degrades to in-memory-only behavior for this tab rather than crashing.
@@ -55,7 +72,8 @@ export function subscribePersisted<T>(key: string, onChange: (value: T) => void)
   function handler(e: StorageEvent) {
     if (e.key !== PREFIX + key || e.newValue == null) return;
     try {
-      onChange(JSON.parse(e.newValue) as T);
+      const value = currentEnvelopeValue<T>(JSON.parse(e.newValue));
+      if (value !== undefined) onChange(value);
     } catch {
       // Ignore a malformed write from a stale/incompatible tab.
     }

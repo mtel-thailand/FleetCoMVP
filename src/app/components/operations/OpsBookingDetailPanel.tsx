@@ -1,13 +1,15 @@
-import { useState } from "react";
-import { Check, Truck, AlertTriangle, FileCheck2, Ban, Hash, Calendar, MapPin, Pencil, FlaskConical } from "lucide-react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Button } from "@/app/components/ui/Button";
+import { Textarea } from "@/app/components/ui/Input";
+import { Check, Car, Truck, AlertTriangle, FileCheck2, Ban, Hash, Calendar, MapPin, MoreHorizontal, Pencil, Play, XCircle, ChevronRight, type LucideIcon } from "lucide-react";
 import {
-  type Booking, type VehicleDriverAssignment, bookingInvoices, bookingQuotations, fleetCoBookingStatusLabel, bookingTaxInvoices, invoiceEligible, REQUEST_STATUSES,
+  type Booking, type VehicleDriverAssignment, bookingInvoices, bookingQuotations, fleetCoBookingStatusLabel, bookingTaxInvoices, invoiceEligible, isRentalBooking,
 } from "@/app/data/bookings";
 import type { ClientAccount } from "@/app/data/clients";
 import type { Vehicle, VehicleClass } from "@/app/data/vehicles";
 import type { Driver } from "@/app/data/drivers";
-import { type Quotation } from "@/app/data/quotations";
-import { type Invoice } from "@/app/data/invoices";
+import { isQuotationExpired, type Quotation } from "@/app/data/quotations";
+import { invoiceDisplayStatus, type Invoice } from "@/app/data/invoices";
 import type { TaxInvoice } from "@/app/data/taxInvoices";
 import { StatusBadge } from "@/app/components/ui/StatusBadge";
 import { StatTile } from "@/app/components/ui/StatTile";
@@ -15,14 +17,51 @@ import { DocumentChain } from "@/app/components/ui/DocumentChain";
 import { RentalTimeline, buildRentalTimeline } from "@/app/components/ui/RentalTimeline";
 import { ReasonForm } from "@/app/components/ui/ReasonForm";
 import { ActionModal } from "@/app/components/ui/ActionModal";
-import { formatDate } from "@/app/components/ui/utils";
+import { formatDate, localDateKey } from "@/app/components/ui/utils";
 import { getVehicleConflicts, getDriverConflicts, type Conflict } from "@/app/lib/assignmentConflicts";
+import { getRentalReminder, rentalReminderLabel } from "@/app/lib/fleetCoActions";
 import { updateBooking } from "@/app/lib/bookingsStore";
+import { transitionVehicleStatusBatch, transitionVehicleStatuses } from "@/app/lib/vehiclesStore";
 import { useIssueReports, updateIssueReport } from "@/app/lib/issueReportsStore";
 import { SHOW_ISSUE_REPORTS } from "@/app/data/issueReports";
 import { addNotification } from "@/app/lib/notificationsStore";
-import { useNavigate } from "react-router";
-import { useOpenInvoice, useOpenTaxInvoice } from "@/app/lib/documentNav";
+import { useLocation, useNavigate } from "react-router";
+import { useOpenTaxInvoice } from "@/app/lib/documentNav";
+import { toastError, toastSuccess } from "@/app/lib/toast";
+import { addCalendarDays, demoNowStamp } from "@/app/data/demoDates";
+
+function AnimatedDetails({
+  label,
+  count,
+  muted = false,
+  children,
+}: {
+  label: string;
+  count: number;
+  muted?: boolean;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="mt-2">
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+        className={`flex w-full cursor-pointer list-none items-center gap-1.5 px-1 py-1 text-left text-[11px] font-medium ${muted ? "text-slate-400" : "text-slate-500"}`}
+      >
+        {label} ({count})
+        <ChevronRight size={14} className={`transition-transform duration-200 ${open ? "rotate-90" : ""}`} />
+      </button>
+      <div className={`grid transition-[grid-template-rows] duration-200 ease-out ${open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}>
+        <div className={`min-h-0 overflow-hidden ${open ? "visible" : "invisible pointer-events-none"}`}>
+          <div className="pt-1">{children}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // Ops-side booking detail — presentational content for the routed
 // /ops/bookings/:id page (see OpsBookingDetail.tsx).
@@ -61,13 +100,11 @@ import { useOpenInvoice, useOpenTaxInvoice } from "@/app/lib/documentNav";
 // role ClientBookingDetail's own "View Invoice" button already plays.
 
 function nowStamp() {
-  return new Date().toISOString().slice(0, 16).replace("T", " ");
+  return demoNowStamp();
 }
 
 function addDays(dateStr: string, days: number): string {
-  const d = new Date(dateStr + "T00:00:00");
-  d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
+  return addCalendarDays(dateStr, days);
 }
 
 // today()/defaultLineItem()/editorInitialValues() moved to
@@ -101,20 +138,30 @@ function InfoBanner({ tone, children }: { tone: "sky" | "indigo" | "amber" | "em
   return <div className={`border rounded-xl px-4 py-3 text-xs leading-relaxed ${toneClass[tone]}`}>{children}</div>;
 }
 
+// Shared by the page-level capacity banner (Requested/Accepted) and the
+// assignment modal itself — the modal has no other route to this context
+// when editing an existing assignment, since the page banner only renders
+// pre-assignment.
+function formatCapacitySummary(quantity: number, vehicleClass: string, availableVehicleCount: number, availableDriverCount: number) {
+  const vehicleLabel = quantity === 1 ? vehicleClass : `${vehicleClass}s`;
+  const required = `${quantity} ${vehicleLabel} and ${quantity} compatible driver${quantity === 1 ? "" : "s"}`;
+  const available = `${availableVehicleCount} matching vehicle${availableVehicleCount === 1 ? "" : "s"} and ${availableDriverCount} compatible driver${availableDriverCount === 1 ? "" : "s"}`;
+  return { required, available, hasCapacity: availableVehicleCount >= quantity && availableDriverCount >= quantity };
+}
+
 // The header's one primary action — same size/weight/color as
 // ClientBookingDetail.tsx's own "View Quotation"/"View Invoice" button
 // (h-8, accent fill), so the two portals' pages read as the same control
 // in the same place, not a family resemblance.
 function HeaderAction({
-  onClick, icon: Icon, children,
-}: { onClick: () => void; icon: React.ComponentType<{ size?: number }>; children: React.ReactNode }) {
+  onClick, icon: Icon, children, title,
+}: { onClick: () => void; icon: LucideIcon; children: React.ReactNode; title?: string }) {
   return (
-    <button
-      onClick={onClick}
-      className="flex items-center gap-1.5 h-8 px-3 bg-[var(--portal-accent)] text-white rounded-lg text-xs font-medium hover:bg-[var(--portal-accent-hover)] cursor-pointer shrink-0"
+    <Button variant="primary" size="toolbar" className="shrink-0"
+      onClick={onClick} title={title}
     >
       <Icon size={13} /> {children}
-    </button>
+    </Button>
   );
 }
 
@@ -124,7 +171,7 @@ function HeaderAction({
 // still reads as the default one click away.
 function HeaderSecondaryAction({
   onClick, icon: Icon, children, compact = false,
-}: { onClick: () => void; icon: React.ComponentType<{ size?: number }>; children: React.ReactNode; compact?: boolean }) {
+}: { onClick: () => void; icon: LucideIcon; children: React.ReactNode; compact?: boolean }) {
   return (
     <button
       onClick={onClick}
@@ -135,18 +182,24 @@ function HeaderSecondaryAction({
   );
 }
 
-function HeaderDemoAction({
-  onClick, children,
-}: { onClick: () => void; children: React.ReactNode }) {
+// The billing-track counterpart to a rental-track HeaderAction — flat like
+// HeaderSecondaryAction (no solid fill, so it doesn't compete with whichever
+// rental action is sitting solid right next to it), but tinted with the
+// brand color instead of neutral slate, so it still reads as a real action
+// rather than chrome.
+function HeaderTonalAction({
+  onClick, icon: Icon, children,
+}: { onClick: () => void; icon: LucideIcon; children: React.ReactNode }) {
   return (
     <button
       onClick={onClick}
-      className="flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-dashed border-amber-400 bg-amber-50 px-3 text-xs font-medium text-amber-800 hover:bg-amber-100 cursor-pointer"
+      className="flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-[var(--portal-accent-light-2)] bg-[var(--portal-accent-light)] px-3 text-xs font-medium text-[var(--portal-accent)] hover:bg-[var(--portal-accent-light-2)] cursor-pointer"
     >
-      <FlaskConical size={13} /> {children}
+      <Icon size={13} /> {children}
     </button>
   );
 }
+
 
 // ── Vehicle + driver assignment — the §4.3 "assignment engine" ─────────────
 // A quantity>1 booking ("Van × 2") needs a *different* vehicle and driver
@@ -183,6 +236,8 @@ function VehiclePickerList({
             key={v.id}
             type="button"
             disabled={disabled}
+            aria-pressed={selected}
+            aria-label={`${selected ? "Selected" : "Select"} vehicle ${v.plateNumber}`}
             onClick={() => onSelect(v.id)}
             className={`w-full text-left px-3 py-2.5 rounded-lg border transition-colors ${
               disabled
@@ -193,10 +248,13 @@ function VehiclePickerList({
             }`}
           >
             <div className="flex items-center justify-between gap-2">
-              <span className="text-xs font-medium text-slate-800">
-                {v.plateNumber} · {v.brand} {v.model}
+              <span className="flex min-w-0 items-center gap-2 text-xs font-medium text-slate-800">
+                {selected && <Check size={13} className="shrink-0 text-[var(--portal-accent)]" />}
+                <span className="truncate">{v.plateNumber} · {v.brand} {v.model}</span>
               </span>
-              <StatusBadge status={v.status} />
+              {(selected || disabled) && (
+                <StatusBadge status={selected ? "Selected" : "Unavailable"} />
+              )}
             </div>
             {disabled && (
               <p className="text-[11px] text-rose-600 mt-1 flex items-start gap-1">
@@ -221,7 +279,7 @@ function DriverPickerList({
   onSelect: (id: string) => void;
 }) {
   return (
-    <div className="space-y-1.5 max-h-56 overflow-y-auto pr-0.5">
+    <div className="space-y-1.5">
       {candidates.map((d) => {
         const conflicts = conflictsMap.get(d.id) ?? [];
         const elsewhere = pickedElsewhere.has(d.id);
@@ -232,6 +290,8 @@ function DriverPickerList({
             key={d.id}
             type="button"
             disabled={disabled}
+            aria-pressed={selected}
+            aria-label={`${selected ? "Selected" : "Select"} driver ${d.name}`}
             onClick={() => onSelect(d.id)}
             className={`w-full text-left px-3 py-2.5 rounded-lg border transition-colors ${
               disabled
@@ -242,7 +302,10 @@ function DriverPickerList({
             }`}
           >
             <div className="flex items-center justify-between gap-2">
-              <span className="text-xs font-medium text-slate-800">{d.name}</span>
+              <span className="flex min-w-0 items-center gap-2 text-xs font-medium text-slate-800">
+                {selected && <Check size={13} className="shrink-0 text-[var(--portal-accent)]" />}
+                <span className="truncate">{d.name}</span>
+              </span>
               <span className="text-[10px] text-slate-400">{d.licenseClass}</span>
             </div>
             {disabled && (
@@ -260,6 +323,15 @@ function DriverPickerList({
 
 type UnitPick = { vehicleId: string | null; driverId: string | null };
 
+function pairPreferenceScore(vehicle: Vehicle, driver: Driver): number {
+  // These are soft signals only. A driver's usual vehicle gets the strongest
+  // preference, followed by a shared base location; neither one reserves a
+  // vehicle or restricts where the driver may work.
+  if (driver.homeVehicleId === vehicle.id) return 0;
+  if (driver.homeBase && driver.homeBase === vehicle.homeDepot) return 1;
+  return 2;
+}
+
 function AssignmentForm({
   booking,
   vehicles,
@@ -276,16 +348,7 @@ function AssignmentForm({
   onAssign: (assignments: VehicleDriverAssignment[]) => void;
 }) {
   const unitCount = booking.quantity;
-  // Pre-filled from whatever's already assigned (reassignment case) — same
-  // "start from the current state" behavior the single-pair form had.
-  const [picks, setPicks] = useState<UnitPick[]>(() => {
-    const existing = booking.assignments ?? [];
-    return Array.from({ length: unitCount }, (_, i) => ({
-      vehicleId: existing[i]?.vehicleId ?? null,
-      driverId: existing[i]?.driverId ?? null,
-    }));
-  });
-
+  const isReassignment = (booking.assignments?.length ?? 0) > 0;
   const matchingVehicles = vehicles.filter((v) => v.vehicleClass === booking.vehicleClassRequested);
   const vehicleConflicts = new Map(matchingVehicles.map((v) => [v.id, getVehicleConflicts(v, booking, allBookings)]));
   const driverConflicts = new Map(
@@ -299,6 +362,35 @@ function AssignmentForm({
   const candidateDrivers = [...drivers].sort(
     (a, b) => (driverConflicts.get(a.id)?.length ?? 0) - (driverConflicts.get(b.id)?.length ?? 0),
   );
+  const suggestedVehicles = candidateVehicles.filter((vehicle) => (vehicleConflicts.get(vehicle.id)?.length ?? 0) === 0);
+  const suggestedDrivers = candidateDrivers.filter((driver) => (driverConflicts.get(driver.id)?.length ?? 0) === 0);
+  const suggestedPairs = matchingVehicles
+    .flatMap((vehicle) => drivers.map((driver) => ({ vehicle, driver })))
+    .filter(({ vehicle, driver }) =>
+      (vehicleConflicts.get(vehicle.id)?.length ?? 0) === 0 &&
+      (driverConflicts.get(driver.id)?.length ?? 0) === 0,
+    )
+    .sort((a, b) => pairPreferenceScore(a.vehicle, a.driver) - pairPreferenceScore(b.vehicle, b.driver))
+    .reduce<Array<{ vehicleId: string; driverId: string }>>((pairs, candidate) => {
+      if (pairs.length >= unitCount) return pairs;
+      if (pairs.some((pair) => pair.vehicleId === candidate.vehicle.id || pair.driverId === candidate.driver.id)) return pairs;
+      pairs.push({ vehicleId: candidate.vehicle.id, driverId: candidate.driver.id });
+      return pairs;
+    }, []);
+  const canSuggestCompleteAssignment = suggestedPairs.length >= unitCount;
+
+  // Pre-filled from whatever's already assigned (reassignment case) — same
+  // "start from the current state" behavior the single-pair form had. A new
+  // happy-case booking starts with a complete, conflict-free suggestion so
+  // the operator only needs to review and confirm it.
+  const [picks, setPicks] = useState<UnitPick[]>(() => {
+    const existing = booking.assignments ?? [];
+    return Array.from({ length: unitCount }, (_, i) => ({
+      vehicleId: existing[i]?.vehicleId ?? (canSuggestCompleteAssignment ? suggestedPairs[i].vehicleId : null),
+      driverId: existing[i]?.driverId ?? (canSuggestCompleteAssignment ? suggestedPairs[i].driverId : null),
+    }));
+  });
+  const [currentUnit, setCurrentUnit] = useState<number | null>(null);
 
   function setPick(index: number, patch: Partial<UnitPick>) {
     setPicks((prev) => prev.map((p, i) => (i === index ? { ...p, ...patch } : p)));
@@ -312,54 +404,226 @@ function AssignmentForm({
       (driverConflicts.get(p.driverId)?.length ?? 1) === 0,
   );
 
+  const currentPick = picks[currentUnit ?? 0];
+  const vehiclesElsewhere = new Set(
+    picks.filter((_, index) => index !== currentUnit).map((pick) => pick.vehicleId).filter((id): id is string => !!id),
+  );
+  const driversElsewhere = new Set(
+    picks.filter((_, index) => index !== currentUnit).map((pick) => pick.driverId).filter((id): id is string => !!id),
+  );
+  const availableVehicles = candidateVehicles.filter(
+    (vehicle) => (vehicleConflicts.get(vehicle.id)?.length ?? 0) === 0 && !vehiclesElsewhere.has(vehicle.id),
+  );
+  const unavailableVehicles = candidateVehicles.filter((vehicle) => !availableVehicles.includes(vehicle));
+  const availableDrivers = candidateDrivers.filter(
+    (driver) => (driverConflicts.get(driver.id)?.length ?? 0) === 0 && !driversElsewhere.has(driver.id),
+  );
+  const unavailableDrivers = candidateDrivers.filter((driver) => !availableDrivers.includes(driver));
+  const selectedAvailableVehicles = availableVehicles.filter((vehicle) => vehicle.id === currentPick.vehicleId);
+  const otherAvailableVehicles = availableVehicles.filter((vehicle) => vehicle.id !== currentPick.vehicleId);
+  const selectedAvailableDrivers = availableDrivers.filter((driver) => driver.id === currentPick.driverId);
+  const otherAvailableDrivers = availableDrivers.filter((driver) => driver.id !== currentPick.driverId);
+  const isSuggestedAssignment = !isReassignment && canSuggestCompleteAssignment;
+  // Restates the page's capacity context inside the modal — the "Edit
+  // Assignment" entry point (an already-Assigned booking) never shows the
+  // page-level banner at all, so this is otherwise invisible once here.
+  const capacity = formatCapacitySummary(unitCount, booking.vehicleClassRequested, suggestedVehicles.length, suggestedDrivers.length);
+  const capacityMessage = capacity.hasCapacity
+    ? `Capacity available — ${capacity.available} found.`
+    : `${capacity.required} required; ${capacity.available} available.`;
   return (
     <div className="space-y-5">
-      {picks.map((pick, i) => {
-        // Excludes only *other* units' picks — a unit keeps showing its own
-        // current selection as selected, not disabled-against-itself.
-        const vehiclesElsewhere = new Set(picks.filter((_, j) => j !== i).map((p) => p.vehicleId).filter((id): id is string => !!id));
-        const driversElsewhere = new Set(picks.filter((_, j) => j !== i).map((p) => p.driverId).filter((id): id is string => !!id));
-        return (
-          <div key={i} className={unitCount > 1 ? "space-y-4 pb-5 border-b border-slate-100 last:border-b-0 last:pb-0" : "space-y-4"}>
-            {unitCount > 1 && <p className="text-xs font-semibold text-slate-700">Unit {i + 1} of {unitCount}</p>}
-            <div>
-              <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
-                Vehicle — {booking.vehicleClassRequested}
-              </h4>
-              <VehiclePickerList
-                vehicleClass={booking.vehicleClassRequested}
-                candidates={candidateVehicles}
-                conflictsMap={vehicleConflicts}
-                selectedId={pick.vehicleId}
-                pickedElsewhere={vehiclesElsewhere}
-                onSelect={(id) => setPick(i, { vehicleId: id })}
-              />
-            </div>
-            <div>
-              <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Driver</h4>
-              <DriverPickerList
-                candidates={candidateDrivers}
-                conflictsMap={driverConflicts}
-                selectedId={pick.driverId}
-                pickedElsewhere={driversElsewhere}
-                onSelect={(id) => setPick(i, { driverId: id })}
-              />
-            </div>
-          </div>
-        );
-      })}
+      <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5">
+        <div className={`flex items-start gap-2 ${isSuggestedAssignment ? "text-xs text-emerald-700" : "text-[11px] leading-4 text-slate-500"}`}>
+          {isSuggestedAssignment ? (
+            <Check size={14} className="mt-0.5 shrink-0" />
+          ) : capacity.hasCapacity ? (
+            <Check size={12} className="mt-0.5 shrink-0 text-emerald-600" />
+          ) : (
+            <AlertTriangle size={12} className="mt-0.5 shrink-0 text-amber-500" />
+          )}
+          <span>
+            {isSuggestedAssignment ? (
+              <><span className="font-semibold">Review suggested assignment.</span> We selected the best available vehicle and driver based on usual pairing and home base.</>
+            ) : (
+              capacityMessage
+            )}
+          </span>
+        </div>
+        <div className="mt-2 flex items-start gap-2 border-t border-slate-200 pt-2 text-[11px] leading-4 text-slate-500">
+          <AlertTriangle size={13} className="mt-0.5 shrink-0 text-slate-400" />
+          <span>Before confirming, verify that the selected vehicle and driver can reach this rental. Travel time isn&apos;t checked automatically.</span>
+        </div>
+      </div>
 
-      <div className="flex gap-2 pt-1">
-        <button onClick={onCancel} className="flex-1 py-2 border border-slate-200 rounded-lg text-xs text-slate-600 hover:bg-slate-100 cursor-pointer">
-          Cancel
-        </button>
-        <button
-          disabled={!allOk}
-          onClick={() => allOk && onAssign(picks.map((p) => ({ vehicleId: p.vehicleId!, driverId: p.driverId! })))}
-          className="flex-1 py-2 bg-[var(--portal-accent)] text-white rounded-lg text-xs font-medium hover:bg-[var(--portal-accent-hover)] flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-[var(--portal-accent)] cursor-pointer"
-        >
-          <Check size={12} /> Confirm Assignment{unitCount > 1 ? "s" : ""}
-        </button>
+      <div className="space-y-2">
+        {picks.map((pick, index) => {
+          const open = index === currentUnit;
+          const vehicle = vehicles.find((item) => item.id === pick.vehicleId);
+          const driver = drivers.find((item) => item.id === pick.driverId);
+          const complete = !!vehicle && !!driver;
+          return (
+            <section key={index} className={`overflow-hidden rounded-lg border ${open ? "border-[var(--portal-accent-soft)]" : "border-slate-200"}`}>
+              <button
+                type="button"
+                aria-expanded={open}
+                onClick={() => setCurrentUnit(open ? null : index)}
+                className={`flex w-full items-center gap-3 px-3 py-3 text-left cursor-pointer ${open ? "bg-[var(--portal-accent-light)]" : "bg-white hover:bg-slate-50"}`}
+              >
+                <span className={`relative flex size-7 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold ${complete ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>
+                  {complete ? (
+                    <>
+                      <Car size={15} />
+                      <span className="absolute -bottom-0.5 -right-0.5 flex size-3 items-center justify-center rounded-full bg-emerald-600 ring-[1.5px] ring-white">
+                        <Check size={7} strokeWidth={3} className="text-white" />
+                      </span>
+                    </>
+                  ) : (
+                    index + 1
+                  )}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-xs font-semibold text-slate-800">Unit {index + 1}</span>
+                  <span className="block truncate text-[11px] text-slate-500">
+                    {complete ? `${vehicle.plateNumber} · ${driver.name}` : "Vehicle and driver required"}
+                  </span>
+                </span>
+                <ChevronRight size={15} className={`shrink-0 text-slate-400 transition-transform ${open ? "rotate-90" : ""}`} />
+              </button>
+
+              <div
+                aria-hidden={!open}
+                className={`grid transition-[grid-template-rows] duration-200 ease-out ${open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}
+              >
+                <div className={`min-h-0 overflow-hidden ${open ? "visible" : "invisible pointer-events-none"}`}>
+                <div className="space-y-5 border-t border-slate-200 bg-white p-3">
+                  <section>
+                    <div className="mb-2 flex items-center justify-between gap-3">
+                      <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                        Vehicle · {booking.vehicleClassRequested}
+                      </h4>
+                      <span className="text-[11px] text-emerald-700">{availableVehicles.length} available</span>
+                    </div>
+                    {selectedAvailableVehicles.length > 0 ? (
+                      <VehiclePickerList
+                        vehicleClass={booking.vehicleClassRequested}
+                        candidates={selectedAvailableVehicles}
+                        conflictsMap={vehicleConflicts}
+                        selectedId={currentPick.vehicleId}
+                        pickedElsewhere={vehiclesElsewhere}
+                        onSelect={(id) => setPick(index, { vehicleId: id })}
+                      />
+                    ) : availableVehicles.length > 0 ? (
+                      <VehiclePickerList
+                        vehicleClass={booking.vehicleClassRequested}
+                        candidates={availableVehicles}
+                        conflictsMap={vehicleConflicts}
+                        selectedId={currentPick.vehicleId}
+                        pickedElsewhere={vehiclesElsewhere}
+                        onSelect={(id) => setPick(index, { vehicleId: id })}
+                      />
+                    ) : (
+                      <p className="rounded-lg bg-amber-50 px-3 py-2.5 text-xs text-amber-700">No vehicles are available for these dates.</p>
+                    )}
+                    {selectedAvailableVehicles.length > 0 && otherAvailableVehicles.length > 0 && (
+                      <AnimatedDetails label="Other available vehicles" count={otherAvailableVehicles.length}>
+                        <VehiclePickerList
+                          vehicleClass={booking.vehicleClassRequested}
+                          candidates={otherAvailableVehicles}
+                          conflictsMap={vehicleConflicts}
+                          selectedId={currentPick.vehicleId}
+                          pickedElsewhere={vehiclesElsewhere}
+                          onSelect={(id) => setPick(index, { vehicleId: id })}
+                        />
+                      </AnimatedDetails>
+                    )}
+                    {unavailableVehicles.length > 0 && (
+                      <AnimatedDetails label="Unavailable vehicles" count={unavailableVehicles.length} muted>
+                        <VehiclePickerList
+                          vehicleClass={booking.vehicleClassRequested}
+                          candidates={unavailableVehicles}
+                          conflictsMap={vehicleConflicts}
+                          selectedId={currentPick.vehicleId}
+                          pickedElsewhere={vehiclesElsewhere}
+                          onSelect={(id) => setPick(index, { vehicleId: id })}
+                        />
+                      </AnimatedDetails>
+                    )}
+                  </section>
+
+                  <section>
+                    <div className="mb-2 flex items-center justify-between gap-3">
+                      <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Driver</h4>
+                      <span className="text-[11px] text-emerald-700">{availableDrivers.length} available</span>
+                    </div>
+                    {selectedAvailableDrivers.length > 0 ? (
+                      <DriverPickerList
+                        candidates={selectedAvailableDrivers}
+                        conflictsMap={driverConflicts}
+                        selectedId={currentPick.driverId}
+                        pickedElsewhere={driversElsewhere}
+                        onSelect={(id) => setPick(index, { driverId: id })}
+                      />
+                    ) : availableDrivers.length > 0 ? (
+                      <DriverPickerList
+                        candidates={availableDrivers}
+                        conflictsMap={driverConflicts}
+                        selectedId={currentPick.driverId}
+                        pickedElsewhere={driversElsewhere}
+                        onSelect={(id) => setPick(index, { driverId: id })}
+                      />
+                    ) : (
+                      <p className="rounded-lg bg-amber-50 px-3 py-2.5 text-xs text-amber-700">No compatible drivers are available for these dates.</p>
+                    )}
+                    {selectedAvailableDrivers.length > 0 && otherAvailableDrivers.length > 0 && (
+                      <AnimatedDetails label="Other available drivers" count={otherAvailableDrivers.length}>
+                        <DriverPickerList
+                          candidates={otherAvailableDrivers}
+                          conflictsMap={driverConflicts}
+                          selectedId={currentPick.driverId}
+                          pickedElsewhere={driversElsewhere}
+                          onSelect={(id) => setPick(index, { driverId: id })}
+                        />
+                      </AnimatedDetails>
+                    )}
+                    {unavailableDrivers.length > 0 && (
+                      <AnimatedDetails label="Unavailable drivers" count={unavailableDrivers.length} muted>
+                        <DriverPickerList
+                          candidates={unavailableDrivers}
+                          conflictsMap={driverConflicts}
+                          selectedId={currentPick.driverId}
+                          pickedElsewhere={driversElsewhere}
+                          onSelect={(id) => setPick(index, { driverId: id })}
+                        />
+                      </AnimatedDetails>
+                    )}
+                  </section>
+                </div>
+                </div>
+              </div>
+            </section>
+          );
+        })}
+      </div>
+
+      <div className="border-t border-slate-200 pt-4">
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg border border-slate-200 text-xs text-slate-600 hover:bg-slate-100 cursor-pointer"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={!allOk}
+            onClick={() => allOk && onAssign(picks.map((pick) => ({ vehicleId: pick.vehicleId!, driverId: pick.driverId! })))}
+          className="flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg bg-[var(--portal-accent)] text-xs font-medium text-white hover:bg-[var(--portal-accent-hover)] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-[var(--portal-accent)] cursor-pointer"
+          >
+            <Check size={13} /> {isReassignment ? "Confirm Reassignment" : `Confirm Assignment${unitCount > 1 ? "s" : ""}`}
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -378,12 +642,40 @@ export function OpsBookingDetailPanel({
   allBookings: Booking[];
 }) {
   const navigate = useNavigate();
+  const location = useLocation();
   const [showAssign, setShowAssign] = useState(false);
   const [showReject, setShowReject] = useState(false);
+  const [showCancel, setShowCancel] = useState(false);
+  const [showBookingActions, setShowBookingActions] = useState(false);
+  const bookingActionsRef = useRef<HTMLDivElement | null>(null);
   const [resolvingId, setResolvingId] = useState<string | null>(null);
   const [resolutionNotes, setResolutionNotes] = useState("");
+  const [lifecycleError, setLifecycleError] = useState<string | null>(null);
   const openTaxInvoice = useOpenTaxInvoice();
-  const openInvoice = useOpenInvoice();
+
+  function openDocumentEditor(mode: "quotation" | "invoice") {
+    const bookingOrigin = location.state as { navPath?: string } | null;
+    const navPath = bookingOrigin?.navPath?.startsWith("/ops/") ? bookingOrigin.navPath : undefined;
+    navigate(`/ops/bookings/${booking.id}/${mode}/new`, {
+      state: {
+        returnTo: `/ops/bookings/${booking.id}`,
+        returnLabel: "Booking",
+        ...(navPath ? { navPath } : {}),
+        ...(location.state ? { returnState: location.state } : {}),
+      },
+    });
+  }
+
+  useEffect(() => {
+    if (!showBookingActions) return;
+    function handleOutsideClick(event: MouseEvent) {
+      if (bookingActionsRef.current && !bookingActionsRef.current.contains(event.target as Node)) {
+        setShowBookingActions(false);
+      }
+    }
+    document.addEventListener("mousedown", handleOutsideClick);
+    return () => document.removeEventListener("mousedown", handleOutsideClick);
+  }, [showBookingActions]);
 
   const allIssues = useIssueReports();
   const issues = allIssues.filter((r) => r.bookingId === booking.id);
@@ -392,6 +684,7 @@ export function OpsBookingDetailPanel({
     updateIssueReport(issueId, { status: "Resolved", resolutionNotes: resolutionNotes.trim() || undefined, resolvedAt: nowStamp() });
     setResolvingId(null);
     setResolutionNotes("");
+    toastSuccess("Issue report resolved.");
   }
 
   // Reverse lookups, not booking.quotationId/invoiceId/taxInvoiceId — see
@@ -399,9 +692,12 @@ export function OpsBookingDetailPanel({
   // over its life, which a single forward pointer can't represent; these
   // read from each document's own bookingId back-reference instead.
   const quotationsForBooking = bookingQuotations(booking.id, quotations);
+  const latestQuotation = quotationsForBooking[0];
+  const acceptedQuotation = quotationsForBooking.find((quotation) => quotation.status === "Accepted");
   const invoicesForBooking = bookingInvoices(booking.id, invoices);
   const taxInvoicesForBooking = bookingTaxInvoices(booking.id, taxInvoices);
   const latestInvoice = invoicesForBooking[0];
+  const latestInvoiceStatus = latestInvoice ? invoiceDisplayStatus(latestInvoice) : undefined;
   const latestInvoiceHasTaxInvoice = !!latestInvoice && taxInvoicesForBooking.some((t) => t.invoiceId === latestInvoice.id);
   const hasExistingAssignment = (booking.assignments?.length ?? 0) > 0;
   const availableVehicleCount = vehicles.filter(
@@ -414,18 +710,16 @@ export function OpsBookingDetailPanel({
   ).length;
   const hasVehicleCapacity = availableVehicleCount >= booking.quantity;
   const hasDriverCapacity = availableDriverCount >= booking.quantity;
-  const hasAssignmentCapacity = hasVehicleCapacity && hasDriverCapacity;
-  const requestedVehicleLabel =
-    booking.quantity === 1 ? booking.vehicleClassRequested : `${booking.vehicleClassRequested}s`;
 
   function resourceAvailabilityBanner() {
-    const requiredSummary = `${booking.quantity} ${requestedVehicleLabel} and ${booking.quantity} compatible driver${booking.quantity === 1 ? "" : "s"}`;
-    const availableSummary = `${availableVehicleCount} matching vehicle${availableVehicleCount === 1 ? "" : "s"} and ${availableDriverCount} compatible driver${availableDriverCount === 1 ? "" : "s"}`;
-    if (hasAssignmentCapacity) {
+    const { required, available, hasCapacity } = formatCapacitySummary(
+      booking.quantity, booking.vehicleClassRequested, availableVehicleCount, availableDriverCount,
+    );
+    if (hasCapacity) {
       return (
         <InfoBanner tone="emerald">
           <span className="font-semibold">Capacity available — </span>
-          {requiredSummary} required; {availableSummary} available.
+          {required} required; {available} available.
         </InfoBanner>
       );
     }
@@ -437,17 +731,54 @@ export function OpsBookingDetailPanel({
     return (
       <InfoBanner tone="amber">
         <span className="font-semibold">{shortageTitle} — </span>
-        {requiredSummary} required; {availableSummary} available.
+        {required} required; {available} available.
       </InfoBanner>
     );
   }
 
   function handleAssign(assignments: VehicleDriverAssignment[]) {
+    if (!acceptedQuotation) {
+      setLifecycleError("An accepted quotation is required before assigning a vehicle and driver.");
+      return;
+    }
+    const previousVehicleIds = new Set((booking.assignments ?? []).map((assignment) => assignment.vehicleId));
+    const nextVehicleIds = new Set(assignments.map((assignment) => assignment.vehicleId));
+    try {
+      transitionVehicleStatusBatch([
+        ...[...previousVehicleIds]
+          .filter((vehicleId) => !nextVehicleIds.has(vehicleId))
+          .map((id) => ({
+            id,
+            transition: {
+              toStatus: "Available" as const,
+              source: "booking" as const,
+              bookingId: booking.id,
+              actingUser: "Operations",
+              reason: "Vehicle released after booking reassignment",
+            },
+          })),
+        ...[...nextVehicleIds].map((id) => ({
+          id,
+          transition: {
+            toStatus: "Reserved" as const,
+            source: "booking" as const,
+            bookingId: booking.id,
+            actingUser: "Operations",
+            reason: "Vehicle reserved for booking",
+          },
+        })),
+      ]);
+    } catch (error) {
+      setLifecycleError(error instanceof Error ? error.message : "Unable to synchronize vehicle status.");
+      toastError("Could not assign resources to {id}.", { id: booking.id });
+      return;
+    }
     // assignedAt is separate from updated (which every later transition also
     // touches) — see Booking's own comment on the field. Written once, here,
     // the only place a booking ever reaches "Assigned".
     const stamp = nowStamp();
     updateBooking(booking.id, { status: "Assigned", assignments, assignedAt: stamp, updated: stamp });
+    setLifecycleError(null);
     setShowAssign(false);
     addNotification({
       eventTypeId: "assignment_made",
@@ -456,11 +787,97 @@ export function OpsBookingDetailPanel({
       bookingId: booking.id,
       message: `Vehicle and driver assigned to booking ${booking.id}.`,
     });
+    toastSuccess("Vehicle and driver assigned to {id}.", { id: booking.id });
   }
 
   function handleRejectRequest(reason: string) {
     updateBooking(booking.id, { status: "Declined", declineReason: reason, updated: nowStamp() });
     setShowReject(false);
+    toastSuccess("Request {id} declined.", { id: booking.id });
+  }
+
+  // Ops-side mirror of ClientBookingDetail's own handleCancelBooking — same
+  // release-then-cancel shape, kept as its own function rather than routed
+  // through transitionAssignedVehicles below because "no assignment yet" is
+  // the normal case here (Accepted), not an error to block on. Offered from
+  // Accepted/Assigned only, not Requested: Requested already has its own
+  // ops-initiated negative action (Reject Request, above) — adding a second,
+  // overlapping one there would be exactly the confusion
+  // ClientBookingDetail's own cancellable comment already calls out for why
+  // Quoted stays excluded on that side.
+  function handleCancelBooking(reason: string) {
+    const vehicleIds = [...new Set((booking.assignments ?? []).map((assignment) => assignment.vehicleId))];
+    if (vehicleIds.length > 0) {
+      try {
+        transitionVehicleStatuses(vehicleIds, {
+          toStatus: "Available",
+          source: "booking",
+          bookingId: booking.id,
+          actingUser: "Operations",
+          reason: "Booking cancelled",
+        });
+      } catch (error) {
+        setLifecycleError(error instanceof Error ? error.message : "Unable to release the assigned vehicle.");
+        toastError("Could not cancel {id}.", { id: booking.id });
+        return;
+      }
+    }
+    const stamp = nowStamp();
+    updateBooking(booking.id, {
+      status: "Cancelled",
+      cancelledFromStatus: booking.status,
+      cancelledBy: "fleetco",
+      cancelledAt: stamp,
+      cancellationReason: reason,
+      updated: stamp,
+    });
+    setLifecycleError(null);
+    setShowCancel(false);
+    addNotification({
+      eventTypeId: "booking_cancelled",
+      portal: "client",
+      recipient: `Thailand Post — ${booking.requestedByName}`,
+      bookingId: booking.id,
+      message: `${booking.id} was cancelled by FleetCo: ${reason}`,
+    });
+    toastSuccess("Booking {id} cancelled.", { id: booking.id });
+  }
+
+  function transitionAssignedVehicles(toStatus: "On Rental" | "Available", reason: string): boolean {
+    const vehicleIds = [...new Set((booking.assignments ?? []).map((assignment) => assignment.vehicleId))];
+    if (vehicleIds.length === 0) {
+      setLifecycleError("This booking has no assigned vehicle. Assign a vehicle before moving the rental forward.");
+      return false;
+    }
+    try {
+      transitionVehicleStatuses(vehicleIds, {
+        toStatus,
+        source: "booking",
+        bookingId: booking.id,
+        actingUser: "Operations",
+        reason,
+      });
+      setLifecycleError(null);
+      return true;
+    } catch (error) {
+      setLifecycleError(error instanceof Error ? error.message : "Unable to synchronize vehicle status.");
+      toastError("Could not update rental {id}.", { id: booking.id });
+      return false;
+    }
+  }
+
+  function handleStartRental() {
+    if (!transitionAssignedVehicles("On Rental", "Rental started")) return;
+    const stamp = nowStamp();
+    updateBooking(booking.id, { status: "Active", startedAt: stamp, updated: stamp });
+    toastSuccess("Rental {id} started.", { id: booking.id });
+  }
+
+  function handleCompleteRental() {
+    if (!transitionAssignedVehicles("Available", "Rental completed")) return;
+    const stamp = nowStamp();
+    updateBooking(booking.id, { status: "Completed", completedAt: stamp, updated: stamp });
+    toastSuccess("Rental {id} completed.", { id: booking.id });
   }
 
   // One row-box per unit, grouped visually rather than distinguished only by
@@ -490,24 +907,69 @@ export function OpsBookingDetailPanel({
   let rentalPrimary: React.ReactNode = null;
   let rentalSecondary: React.ReactNode = null;
   let rentalInfo: React.ReactNode = null;
+  // Both Start and Complete are manual-only (see handleStartRental /
+  // handleCompleteRental below) — a real click, not a calendar date, is
+  // what advances a booking. That means the schedule and the confirmed
+  // status can drift in either direction, and this is the page the actual
+  // action buttons live on, so it's the right place to say so — not just
+  // the vehicle page, which can only point back here.
+  const today = localDateKey();
+  const rentalReminder = getRentalReminder(booking, today);
+  const expiredQuotation = booking.status === "Quoted" && !!latestQuotation && isQuotationExpired(latestQuotation);
+  const canIssueQuotationRevision = expiredQuotation && booking.startDate >= today;
   switch (booking.status) {
     case "Requested":
-      rentalPrimary = <HeaderAction icon={FileCheck2} onClick={() => navigate(`/ops/bookings/${booking.id}/quotation/new`)}>Create Quotation</HeaderAction>;
+      rentalPrimary = <HeaderAction icon={FileCheck2} onClick={() => openDocumentEditor("quotation")}>Create Quotation</HeaderAction>;
       rentalSecondary = <HeaderSecondaryAction icon={Ban} onClick={() => setShowReject(true)}>Reject Request</HeaderSecondaryAction>;
       rentalInfo = resourceAvailabilityBanner();
       break;
     case "Quoted":
-      rentalInfo = <InfoBanner tone="sky">Waiting on {client?.name ?? "the client"} to accept or decline the quotation.</InfoBanner>;
+      if (expiredQuotation) {
+        if (canIssueQuotationRevision) {
+          rentalPrimary = <HeaderAction icon={FileCheck2} onClick={() => openDocumentEditor("quotation")}>Issue Revision</HeaderAction>;
+          rentalInfo = <InfoBanner tone="amber"><span className="font-semibold">Quotation expired — </span>issue a revised quotation before asking {client?.name ?? "the client"} to decide.</InfoBanner>;
+        } else {
+          rentalInfo = <InfoBanner tone="slate"><span className="font-semibold">Quotation expired — </span>the rental start date has passed, so this request is closed.</InfoBanner>;
+        }
+      } else {
+        rentalInfo = <InfoBanner tone="sky">Waiting on {client?.name ?? "the client"} to accept or decline the quotation.</InfoBanner>;
+      }
       break;
     case "Accepted":
       rentalPrimary = <HeaderAction icon={Truck} onClick={() => setShowAssign(true)}>Assign Vehicle &amp; Driver</HeaderAction>;
       rentalInfo = resourceAvailabilityBanner();
       break;
     case "Assigned":
-      rentalPrimary = <HeaderDemoAction onClick={() => updateBooking(booking.id, { status: "Active", updated: nowStamp() })}>Start Rental (Demo Button)</HeaderDemoAction>;
+      rentalPrimary = <HeaderAction icon={Play} onClick={handleStartRental}>Start Rental</HeaderAction>;
+      if (rentalReminder === "start_overdue") {
+        rentalInfo = <InfoBanner tone="amber"><span className="font-semibold">{rentalReminderLabel(rentalReminder)} — </span>The rental period started on {formatDate(booking.startDate)}, but Start Rental hasn&apos;t been clicked yet.</InfoBanner>;
+      } else if (rentalReminder === "start_due") {
+        rentalInfo = <InfoBanner tone="amber"><span className="font-semibold">{rentalReminderLabel(rentalReminder)} — </span>Confirm the actual handover before starting the rental.</InfoBanner>;
+      }
       break;
     case "Active":
-      rentalPrimary = <HeaderDemoAction onClick={() => updateBooking(booking.id, { status: "Completed", updated: nowStamp() })}>Complete Rental (Demo Button)</HeaderDemoAction>;
+      if (rentalReminder === "completion_overdue") {
+        rentalPrimary = <HeaderAction icon={Check} onClick={handleCompleteRental}>Complete Rental</HeaderAction>;
+        rentalInfo = <InfoBanner tone="amber"><span className="font-semibold">{rentalReminderLabel(rentalReminder)} — </span>The rental period ended on {formatDate(booking.endDate)}. Confirm the return or extension.</InfoBanner>;
+      } else if (rentalReminder === "completion_due") {
+        rentalPrimary = <HeaderAction icon={Check} onClick={handleCompleteRental}>Complete Rental</HeaderAction>;
+        rentalInfo = <InfoBanner tone="amber"><span className="font-semibold">{rentalReminderLabel(rentalReminder)} — </span>Confirm the return or extension when the service is actually finished.</InfoBanner>;
+      } else if (booking.startDate > today) {
+        rentalPrimary = <HeaderAction icon={Check} onClick={handleCompleteRental}>Complete Rental</HeaderAction>;
+        rentalInfo = <InfoBanner tone="amber"><span className="font-semibold">Needs review — </span>Marked Active, but its rental period doesn&apos;t start until {formatDate(booking.startDate)}.</InfoBanner>;
+      } else {
+        // No drift, so no banner needed — but still worth a hover hint that
+        // this isn't gated to the scheduled end date. Complete Rental ends
+        // the rental the moment it's clicked (see handleCompleteRental /
+        // startedAt+completedAt above), so a return that comes in early
+        // already works today; there's no separate "cut short" concept to
+        // build (see #4 in the booking-flow audit — resolved as a no-op).
+        rentalPrimary = (
+          <HeaderAction icon={Check} onClick={handleCompleteRental} title="Ends the rental now — use it as soon as the vehicle is actually back, even before the scheduled end date.">
+            Complete Rental
+          </HeaderAction>
+        );
+      }
       break;
     default:
       break;
@@ -522,18 +984,21 @@ export function OpsBookingDetailPanel({
   // booking's pending payment invisible on this panel.
   let billingPrimary: React.ReactNode = null;
   let billingInfo: React.ReactNode = null;
-  if (latestInvoice?.status === "Payment Submitted") {
+  if (latestInvoiceStatus === "Payment Submitted") {
+    // Invoice already issued — no button here. Only "hasn't been issued yet"
+    // gets a header action; a submitted payment is verified from the
+    // Documents section below (DocumentChain), which already links straight
+    // to this same invoice, not from a header shortcut duplicating it.
     billingInfo = (
       <InfoBanner tone="amber">
-        {client?.name ?? "The client"} submitted payment ({latestInvoice.paymentReference}, {formatDate(latestInvoice.paymentDate)}) — view the invoice to verify it and issue the tax invoice.
+        {client?.name ?? "The client"} submitted payment ({latestInvoice.paymentReference}, {formatDate(latestInvoice.paymentDate)}) — view the invoice below to verify it and issue the tax invoice.
       </InfoBanner>
     );
-    billingPrimary = <HeaderAction icon={FileCheck2} onClick={() => openInvoice(latestInvoice.id, booking.id)}>View Invoice</HeaderAction>;
-  } else if (latestInvoice && (latestInvoice.status === "Unpaid" || latestInvoice.status === "Overdue" || latestInvoice.status === "Payment Issue")) {
+  } else if (latestInvoice && (latestInvoiceStatus === "Unpaid" || latestInvoiceStatus === "Overdue" || latestInvoiceStatus === "Payment Issue")) {
     billingInfo = (
       <div className="space-y-2">
         <InfoBanner tone="indigo">Waiting on {client?.name ?? "the client"} to submit payment.</InfoBanner>
-        {latestInvoice.status === "Payment Issue" && (
+        {latestInvoiceStatus === "Payment Issue" && (
           <InfoBanner tone="slate">
             <span className="font-semibold text-slate-600">Last claim rejected: </span>
             {latestInvoice.paymentRejectionReason}
@@ -541,7 +1006,9 @@ export function OpsBookingDetailPanel({
         )}
       </div>
     );
-  } else if (booking.isRecurringBilling && invoiceEligible(booking) && (!latestInvoice || (latestInvoice.status === "Paid" && latestInvoiceHasTaxInvoice))) {
+  } else if (invoiceEligible(booking) && !acceptedQuotation) {
+    billingInfo = <InfoBanner tone="amber"><span className="font-semibold">Accepted quotation required — </span>issue an invoice only after the client has accepted a quotation for this booking.</InfoBanner>;
+  } else if (booking.isRecurringBilling && invoiceEligible(booking) && acceptedQuotation && (!latestInvoice || (latestInvoice.status === "Paid" && latestInvoiceHasTaxInvoice))) {
     // Reachable only once the current cycle (if any) is fully closed out —
     // every earlier branch above claims any invoice that's still pending
     // payment, verification, or its tax invoice, so by the time we get
@@ -557,15 +1024,13 @@ export function OpsBookingDetailPanel({
           : "No invoice issued yet for this rental — ready to bill the first month."}
       </InfoBanner>
     );
-    billingPrimary = <HeaderAction icon={FileCheck2} onClick={() => navigate(`/ops/bookings/${booking.id}/invoice/new`)}>Issue {latestInvoice ? "Next" : "First"} Invoice</HeaderAction>;
-  } else if (!booking.isRecurringBilling && !latestInvoice && invoiceEligible(booking)) {
+    billingPrimary = <HeaderTonalAction icon={FileCheck2} onClick={() => openDocumentEditor("invoice")}>Issue {latestInvoice ? "Next" : "First"} Invoice</HeaderTonalAction>;
+  } else if (!booking.isRecurringBilling && acceptedQuotation && !latestInvoice && invoiceEligible(booking)) {
     // A one-off booking's only invoice — issuable from the moment a
     // vehicle+driver is assigned, same as the recurring case above, not
-    // gated on the rental actually having finished. Reachable exactly once
-    // per booking: the branches above already claim every case where an
-    // invoice exists, so this only fires while there isn't one yet.
-    billingInfo = <InfoBanner tone="indigo">Ready to invoice. You can issue the invoice now.</InfoBanner>;
-    billingPrimary = <HeaderAction icon={FileCheck2} onClick={() => navigate(`/ops/bookings/${booking.id}/invoice/new`)}>Issue Invoice</HeaderAction>;
+    // gated on the rental actually having finished. The header action is
+    // the single clear signal; no extra readiness banner is needed here.
+    billingPrimary = <HeaderTonalAction icon={FileCheck2} onClick={() => openDocumentEditor("invoice")}>Issue Invoice</HeaderTonalAction>;
   } else if (!booking.isRecurringBilling && latestInvoice?.status === "Paid" && latestInvoiceHasTaxInvoice) {
     // The one-off equivalent of "fully closed out" — quotation, invoice, and
     // tax invoice all issued, nothing left on either track. Used to be its
@@ -583,17 +1048,20 @@ export function OpsBookingDetailPanel({
   // Rejected/Declined split) instead of the client-facing label, which
   // reduces to the exact same three values for these terminal statuses.
   let declineArea: React.ReactNode = null;
-  if (booking.declineReason) {
+  const outcomeReason = booking.status === "Cancelled"
+    ? booking.cancellationReason ?? booking.declineReason
+    : booking.declineReason;
+  if (outcomeReason) {
     const declineLabel = fleetCoBookingStatusLabel(booking);
     const tone =
-      declineLabel === "Cancelled" ? "bg-slate-50 border-slate-100 text-slate-500"
+      booking.status === "Cancelled" ? "bg-slate-50 border-slate-100 text-slate-500"
       : declineLabel === "Rejected" ? "bg-orange-50 border-orange-100 text-orange-700"
       : "bg-rose-50 border-rose-100 text-rose-700"; // Declined
-    const lead = declineLabel === "Cancelled" ? "Cancellation reason: " : declineLabel === "Rejected" ? "Rejection reason: " : "Decline reason: ";
+    const lead = booking.status === "Cancelled" ? "Cancellation reason: " : declineLabel === "Rejected" ? "Rejection reason: " : "Decline reason: ";
     declineArea = (
       <div className={`border rounded-lg px-3 py-2.5 text-xs leading-relaxed ${tone}`}>
         <span className="font-semibold">{lead}</span>
-        {booking.declineReason}
+        {outcomeReason}
       </div>
     );
   }
@@ -606,8 +1074,9 @@ export function OpsBookingDetailPanel({
   const timeline = buildRentalTimeline(booking, quotationsForBooking);
   const hasDocuments = quotationsForBooking.length > 0 || invoicesForBooking.length > 0 || taxInvoicesForBooking.length > 0;
   const hasIssueReports = SHOW_ISSUE_REPORTS && issues.length > 0;
-  const showAssignmentCard = !REQUEST_STATUSES.includes(booking.status);
+  const showAssignmentCard = isRentalBooking(booking);
   const hasSidebarContent = hasDocuments || showAssignmentCard || hasIssueReports;
+  const canCancelBooking = booking.status === "Accepted" || booking.status === "Assigned";
 
   return (
     <>
@@ -624,13 +1093,13 @@ export function OpsBookingDetailPanel({
           <div>
             <div className="flex items-center gap-3 flex-wrap">
               <h1 className="text-lg font-semibold text-slate-900">{booking.id}</h1>
-              <StatusBadge status={fleetCoBookingStatusLabel(booking)} />
+              <StatusBadge status={expiredQuotation ? "Expired" : fleetCoBookingStatusLabel(booking)} />
             </div>
             <p className="text-xs text-slate-500 mt-1">
               For {client?.name ?? booking.clientId} · Requested by {booking.requestedByName} · {formatDate(booking.created)}
             </p>
           </div>
-          {(rentalPrimary || billingPrimary) && (
+          {(rentalPrimary || billingPrimary || canCancelBooking) && (
             <div className="flex items-start gap-3 shrink-0">
               {rentalPrimary && (
                 <div className="flex items-center gap-1.5">
@@ -643,21 +1112,45 @@ export function OpsBookingDetailPanel({
                   {billingPrimary}
                 </div>
               )}
+              {canCancelBooking && (
+                <div ref={bookingActionsRef} className="relative shrink-0">
+                  <button
+                    type="button"
+                    aria-label="Booking actions"
+                    aria-expanded={showBookingActions}
+                    onClick={() => setShowBookingActions((visible) => !visible)}
+                    className="flex h-8 w-8 items-center justify-center rounded-lg p-1.5 text-slate-400 hover:bg-white hover:text-slate-700 cursor-pointer"
+                  >
+                    <MoreHorizontal size={17} />
+                  </button>
+                  {showBookingActions && (
+                    <div className="absolute right-0 top-full z-10 mt-1 w-44 rounded-lg border border-slate-200 bg-white p-1 shadow-lg">
+                      <button
+                        type="button"
+                        onClick={() => { setShowBookingActions(false); setShowCancel(true); }}
+                        className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs text-rose-600 hover:bg-rose-50 cursor-pointer"
+                      >
+                        <XCircle size={13} /> Cancelled Rental
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </div>
 
         {/* Full-width context banners — decline reason first (checked
-            first, same priority as ClientBookingDetail.tsx), then whichever
-            track(s) have something to say but no button of their own
-            (Quoted/waiting, Unpaid/waiting, Closed, a settled recurring
-            cycle, ...). Plain banners, not a bordered "Next Step" card —
-            same tier as ClientBookingDetail.tsx's own actionArea. */}
-        {(declineArea || rentalInfo || billingInfo) && (
+            first, same priority as ClientBookingDetail.tsx), then the
+            rental track's own context. Billing status stays in Documents
+            and the dedicated billing pages; it should not interrupt an All
+            Rentals detail with an invoice banner. */}
+        {(lifecycleError || declineArea || rentalInfo || (!isRentalBooking(booking) && billingInfo)) && (
           <div className="space-y-2 mb-5">
+            {lifecycleError && <div role="alert"><InfoBanner tone="amber">{lifecycleError}</InfoBanner></div>}
             {declineArea}
             {rentalInfo}
-            {billingInfo}
+            {!isRentalBooking(booking) && billingInfo}
           </div>
         )}
 
@@ -685,7 +1178,7 @@ export function OpsBookingDetailPanel({
                 />
                 <StatTile icon={Truck} label="Vehicle Class" value={booking.vehicleClassRequested} />
                 <StatTile icon={Hash} label="Quantity" value={String(booking.quantity)} />
-                <StatTile icon={MapPin} label="Branch Location" value={booking.pickupLocation} />
+                <StatTile icon={MapPin} label="Delivery Site" value={booking.pickupLocation} />
               </div>
               {booking.jobNotes && (
                 <div className="mt-4 pt-4 border-t border-slate-100">
@@ -718,7 +1211,9 @@ export function OpsBookingDetailPanel({
                 <div className="flex items-center justify-between gap-3 mb-3">
                   <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Assigned Vehicle & Driver</h4>
                   {booking.status === "Assigned" && hasExistingAssignment && (
-                    <HeaderSecondaryAction compact icon={Pencil} onClick={() => setShowAssign(true)}>Edit Assignment</HeaderSecondaryAction>
+                    <Button variant="link" size="icon" className="flex shrink-0 items-center gap-1 text-xs" type="button" onClick={() => setShowAssign(true)}>
+                      <Pencil size={12} /> Edit Assignment
+                    </Button>
                   )}
                 </div>
                 {assignmentUnits.length > 0 ? (
@@ -761,12 +1256,11 @@ export function OpsBookingDetailPanel({
                       {issue.status === "Open" && (
                         resolvingId === issue.id ? (
                           <div className="mt-2 pt-2 border-t border-slate-200 space-y-2">
-                            <textarea
+                            <Textarea
                               rows={2}
                               value={resolutionNotes}
                               onChange={(e) => setResolutionNotes(e.target.value)}
                               placeholder="Optional — what was done about it..."
-                              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-[var(--portal-accent)] resize-none"
                             />
                             <div className="flex gap-2">
                               <button onClick={() => setResolvingId(null)} className="flex-1 py-1.5 border border-slate-200 rounded-lg text-xs text-slate-600 hover:bg-white cursor-pointer">
@@ -816,6 +1310,21 @@ export function OpsBookingDetailPanel({
             onCancel={() => setShowReject(false)}
             onConfirm={handleRejectRequest}
           />
+        </ActionModal>
+      )}
+
+      {showCancel && (
+        <ActionModal title="Cancel Booking" subtitle={booking.id} onClose={() => setShowCancel(false)}>
+          <div className="space-y-3">
+            {lifecycleError && <InfoBanner tone="amber">{lifecycleError}</InfoBanner>}
+            <ReasonForm
+              title="Reason for cancelling"
+              placeholder="Let the client know why — vehicle unavailable, client called in, etc..."
+              confirmLabel="Confirm Cancellation"
+              onCancel={() => { setLifecycleError(null); setShowCancel(false); }}
+              onConfirm={handleCancelBooking}
+            />
+          </div>
         </ActionModal>
       )}
 

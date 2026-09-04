@@ -21,13 +21,15 @@ import { OpsTaxInvoiceDetail } from "./pages/operations/OpsTaxInvoiceDetail";
 import { OpsDocumentEditorPage } from "./pages/operations/OpsDocumentEditorPage";
 import { RevenueReporting } from "./pages/operations/RevenueReporting";
 import { Vehicles } from "./pages/fleet/Vehicles";
+import { VehicleDetail } from "./pages/fleet/VehicleDetail";
 import { DriverRoster } from "./pages/fleet/DriverRoster";
-import { ClientAccounts } from "./pages/external/ClientAccounts";
+import { ClientAccountDetail, ClientAccounts } from "./pages/external/ClientAccounts";
 import { FinancingPortfolio } from "./pages/financing/FinancingPortfolio";
 import { AcquisitionSimulator } from "./pages/financing/AcquisitionSimulator";
 import { RolesPermissions } from "./pages/system/RolesPermissions";
 import { NotificationCenter } from "./pages/system/NotificationCenter";
 import { AuditLog } from "./pages/system/AuditLog";
+import { AccountSettings } from "./pages/system/AccountSettings";
 import { LiveMap } from "./pages/fleet/LiveMap";
 import { MyRequests } from "./pages/portal/MyRequests";
 import { MyRentals } from "./pages/portal/MyRentals";
@@ -39,6 +41,7 @@ import { InvoiceDetailPage } from "./pages/portal/InvoiceDetailPage";
 import { TaxInvoiceDetailPage } from "./pages/portal/TaxInvoiceDetailPage";
 import { PortalDashboard } from "./pages/portal/PortalDashboard";
 import { BillingHistory } from "./pages/portal/BillingHistory";
+import { CompanyProfile } from "./pages/portal/CompanyProfile";
 import { Documentation } from "./pages/documentation/Documentation";
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
@@ -63,12 +66,13 @@ function RoleGuard({ children }: { children: React.ReactNode }) {
   // platform_admin) could load an /ops/* URL directly and see every
   // client's bookings, not a display bug but a real cross-tenant leak.
   const portalPrefix = ROLE_PORTAL[role] === "client" ? "/portal" : "/ops";
-  if (!location.pathname.startsWith(portalPrefix)) {
+  const isWithinPath = (path: string, prefix: string) => path === prefix || path.startsWith(`${prefix}/`);
+  if (!isWithinPath(location.pathname, portalPrefix)) {
     return <Navigate to={ROLE_DEFAULT[role]} replace />;
   }
 
   const allowed = ROLE_ALLOWED[role];
-  if (allowed.length > 0 && !allowed.some((p) => location.pathname.startsWith(p))) {
+  if (allowed.length > 0 && !allowed.some((p) => isWithinPath(location.pathname, p))) {
     return <Navigate to={ROLE_DEFAULT[role]} replace />;
   }
   return <>{children}</>;
@@ -123,22 +127,27 @@ export const router = createBrowserRouter([
       },
       { path: "ops/calendar", element: <FleetCalendar /> },
       { path: "ops/fleet", element: <Vehicles /> },
+      {
+        path: "ops/fleet/:id",
+        element: <VehicleDetail />,
+        handle: { resolveNavPath: () => "/ops/fleet" } satisfies RouteHandle,
+      },
       { path: "ops/drivers", element: <DriverRoster /> },
       { path: "ops/tracking", element: <LiveMap /> },
       { path: "ops/clients", element: <ClientAccounts /> },
-      { path: "ops/documents/quotations", element: <OpsQuotations /> },
-      // Default to the document's own standing list — unlike the client
-      // portal, ops's quotations/invoices/tax invoices all have one (brief
-      // §2: pipeline tracking, aging/receivables, tax-filing exports are
-      // all portfolio-wide ops concerns with no client-side equivalent —
-      // see the Documents-section comment in Sidebar.tsx for the fuller
-      // reasoning). useOpenQuotation/useOpenInvoice/useOpenTaxInvoice's own
-      // fromBookingId overrides this when the document was actually opened
-      // from inside its booking's own page instead.
+      {
+        path: "ops/clients/:id",
+        element: <ClientAccountDetail />,
+        handle: { resolveNavPath: () => "/ops/clients" } satisfies RouteHandle,
+      },
+      { path: "ops/documents/quotations", element: <OpsQuotations />, handle: { resolveNavPath: () => "/ops/requests" } satisfies RouteHandle },
+      // Document detail routes default to their own ops workspace when
+      // loaded directly. Cross-page opens carry origin state so the detail
+      // page can return to the exact parent record when needed.
       {
         path: "ops/documents/quotations/:id",
         element: <OpsQuotationDetail />,
-        handle: { resolveNavPath: () => "/ops/documents/quotations" } satisfies RouteHandle,
+        handle: { resolveNavPath: () => "/ops/requests" } satisfies RouteHandle,
       },
       { path: "ops/documents/invoices", element: <OpsInvoices /> },
       {
@@ -151,11 +160,13 @@ export const router = createBrowserRouter([
         element: <OpsInvoiceDetail />,
         handle: { resolveNavPath: () => "/ops/documents/invoices" } satisfies RouteHandle,
       },
-      { path: "ops/documents/tax-invoices", element: <OpsTaxInvoices /> },
+      // Tax invoices retain an immutable secondary register for search and
+      // audit, while Invoices & Payments stays selected as the primary task.
+      { path: "ops/documents/tax-invoices", element: <OpsTaxInvoices />, handle: { resolveNavPath: () => "/ops/documents/invoices" } satisfies RouteHandle },
       {
         path: "ops/documents/tax-invoices/:id",
         element: <OpsTaxInvoiceDetail />,
-        handle: { resolveNavPath: () => "/ops/documents/tax-invoices" } satisfies RouteHandle,
+        handle: { resolveNavPath: () => "/ops/documents/invoices" } satisfies RouteHandle,
       },
       // Was a fixed-overlay modal (DocumentEditor.tsx) rendered inline on
       // OpsBookingDetail — converted to a routed page since it's already
@@ -181,6 +192,12 @@ export const router = createBrowserRouter([
       { path: "ops/admin/roles", element: <RolesPermissions /> },
       { path: "ops/admin/notifications", element: <NotificationCenter /> },
       { path: "ops/admin/audit-log", element: <AuditLog /> },
+      // Reachable by every role, not gated behind the "Admin" section's own
+      // items (which are all platform_admin/read_only-only in practice) —
+      // see the matching addition to every restricted FleetCo role's own
+      // ROLE_ALLOWED entry in auth.ts. Opened from Sidebar.tsx's own footer
+      // identity block, not a nav section item.
+      { path: "ops/account", element: <AccountSettings /> },
 
       // ── Client Self-Service Portal (Thailand Post) — brief §5 ──────────
       { path: "portal/dashboard", element: <PortalDashboard /> },
@@ -192,10 +209,9 @@ export const router = createBrowserRouter([
         handle: { resolveNavPath: (params, ctx) => bookingNavPath(params.id, ctx.bookings) } satisfies RouteHandle,
       },
       { path: "portal/tracking", element: <ClientLiveMap /> },
-      // Quotations and Tax Invoices deliberately have no list route — see
-      // the comment above CLIENT_NAV_SECTIONS in Sidebar.tsx. Both :id pages
-      // stay routed and reachable (a booking's Documents card, and — for tax
-      // invoices — the invoice they belong to), just not as their own inbox.
+      // The client portal keeps quotation and tax-invoice detail contextual
+      // to the booking/invoice flow; it does not expose duplicate standalone
+      // registers alongside Billing History and Invoices & Payments.
       {
         path: "portal/documents/quotations/:id",
         element: <QuotationDetailPage />,
@@ -215,9 +231,16 @@ export const router = createBrowserRouter([
       {
         path: "portal/documents/tax-invoices/:id",
         element: <TaxInvoiceDetailPage />,
-        handle: { resolveNavPath: (params, ctx) => bookingNavPath(ctx.taxInvoices.find((t) => t.id === params.id)?.bookingId, ctx.bookings) } satisfies RouteHandle,
+        handle: { resolveNavPath: () => "/portal/documents/invoices" } satisfies RouteHandle,
       },
       { path: "portal/billing-history", element: <BillingHistory /> },
+      // Read-only mirror of what ops manages on Client Accounts (org
+      // profile + tax branch registry) — see CompanyProfile.tsx's own
+      // header comment for why it's a separate component, not a shared one.
+      { path: "portal/company", element: <CompanyProfile /> },
+      // Client-side mirror of ops/account above — same shared AccountSettings
+      // component, reachable by every client role via Sidebar.tsx's footer.
+      { path: "portal/account", element: <AccountSettings /> },
 
       // Catch all
       { path: "*", element: <IndexRedirect /> },

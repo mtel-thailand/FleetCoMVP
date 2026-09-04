@@ -120,12 +120,38 @@ export function InvoiceInbox() {
         <>
           <FilterTabs options={tabOptions} value={tabFilter} onChange={setTabFilter} />
           <FilterBar
-            showPeriod={false}
             searchableFields={["Invoice ID", "Booking ID"]}
             onSearch={setSearch}
             defaultSearch={search}
           />
-          <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+          <div className="space-y-2 md:hidden">
+            {sorted.map((inv) => {
+              const booking = bookingById.get(inv.bookingId);
+              return (
+                <button
+                  key={inv.id}
+                  type="button"
+                  onClick={() => navigate(`/portal/documents/invoices/${inv.id}`)}
+                  className="w-full rounded-xl border border-slate-200 bg-white p-4 text-left shadow-sm focus:outline-none focus:ring-2 focus:ring-[var(--portal-accent)]"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-[var(--portal-accent)]">{inv.id}</p>
+                      <p className="mt-0.5 text-xs text-slate-500">{inv.bookingId}</p>
+                    </div>
+                    <InvoiceStatusCell status={inv.status} dueDate={inv.dueDate} align="end" variant="table" />
+                  </div>
+                  <p className="mt-3 text-base font-semibold text-slate-900">{formatCurrency(inv.amountDue)}</p>
+                  <p className="mt-1 text-xs text-slate-500">Due {formatDate(inv.dueDate)}</p>
+                  {booking && <p className="mt-2 text-xs text-slate-500">{booking.rentalType} · {booking.vehicleClassRequested}</p>}
+                  {invoicesWithTaxInvoice.has(inv.id) && <p className="mt-2 text-[11px] font-medium text-emerald-600">Tax invoice available</p>}
+                </button>
+              );
+            })}
+            {sorted.length === 0 && <div className="rounded-xl border border-slate-200 bg-white py-10 text-center text-sm text-slate-400">No invoices match your filters</div>}
+          </div>
+
+          <div className="hidden bg-white rounded-xl border border-slate-200 overflow-hidden md:block">
             <div className="overflow-x-auto">
               <table className="w-full text-sm" style={{ minWidth: "900px" }}>
                 <thead>
@@ -133,23 +159,20 @@ export function InvoiceInbox() {
                     {["Invoice", "Booking", "Vehicle"].map((h) => (
                       <th key={h} className="text-left text-xs font-medium text-slate-400 px-4 py-2.5 whitespace-nowrap">{h}</th>
                     ))}
-                    <th
-                      className="text-left text-xs font-medium text-slate-400 px-4 py-2.5 whitespace-nowrap cursor-pointer select-none hover:text-slate-600"
-                      onClick={() => handleSort("dueDate")}
-                    >
-                      <span className="inline-flex items-center gap-1">Due Date<SortIndicator active={sortKey === "dueDate"} direction={sortDir} /></span>
+                    <th className="text-left text-xs font-medium text-slate-400 px-4 py-2.5 whitespace-nowrap">
+                      <button type="button" onClick={() => handleSort("dueDate")} className="inline-flex items-center gap-1 hover:text-slate-600">
+                        Due Date<SortIndicator active={sortKey === "dueDate"} direction={sortDir} />
+                      </button>
                     </th>
-                    <th
-                      className="text-left text-xs font-medium text-slate-400 px-4 py-2.5 whitespace-nowrap cursor-pointer select-none hover:text-slate-600"
-                      onClick={() => handleSort("amountDue")}
-                    >
-                      <span className="inline-flex items-center gap-1">Amount Due<SortIndicator active={sortKey === "amountDue"} direction={sortDir} /></span>
+                    <th className="text-left text-xs font-medium text-slate-400 px-4 py-2.5 whitespace-nowrap">
+                      <button type="button" onClick={() => handleSort("amountDue")} className="inline-flex items-center gap-1 hover:text-slate-600">
+                        Amount Due<SortIndicator active={sortKey === "amountDue"} direction={sortDir} />
+                      </button>
                     </th>
-                    <th
-                      className="w-[170px] min-w-[170px] text-left text-xs font-medium text-slate-400 px-4 py-2.5 whitespace-nowrap cursor-pointer select-none hover:text-slate-600"
-                      onClick={() => handleSort("status")}
-                    >
-                      <span className="inline-flex items-center gap-1">Invoice Status<SortIndicator active={sortKey === "status"} direction={sortDir} /></span>
+                    <th className="w-[170px] min-w-[170px] text-left text-xs font-medium text-slate-400 px-4 py-2.5 whitespace-nowrap">
+                      <button type="button" onClick={() => handleSort("status")} className="inline-flex items-center gap-1 hover:text-slate-600">
+                        Invoice Status<SortIndicator active={sortKey === "status"} direction={sortDir} />
+                      </button>
                     </th>
                   </tr>
                 </thead>
@@ -159,7 +182,13 @@ export function InvoiceInbox() {
                     return (
                       <tr key={inv.id} className="border-b border-slate-50 hover:bg-slate-50 cursor-pointer" onClick={() => navigate(`/portal/documents/invoices/${inv.id}`)}>
                         <td className="px-4 py-3 whitespace-nowrap">
-                          <p className="text-xs font-medium text-[var(--portal-accent)]">{inv.id}</p>
+                          <button
+                            type="button"
+                            onClick={(event) => { event.stopPropagation(); navigate(`/portal/documents/invoices/${inv.id}`); }}
+                            className="text-xs font-medium text-[var(--portal-accent)] underline-offset-2 hover:underline focus:outline-none focus:ring-2 focus:ring-[var(--portal-accent)]"
+                          >
+                            {inv.id}
+                          </button>
                           {invoicesWithTaxInvoice.has(inv.id) && (
                             <p className="text-[10px] font-medium text-emerald-600 mt-0.5">Tax invoice available</p>
                           )}

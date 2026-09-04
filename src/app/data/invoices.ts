@@ -3,6 +3,7 @@
 // finance confirms before the tax invoice is released." That's why "Payment
 // Submitted" and "Paid" are distinct statuses below, not one and the same.
 import type { QuotationLineItem } from "./quotations";
+import { demoToday, rebaseDemoDates } from "./demoDates";
 
 // Payment Issue: FleetCo rejected a submitted claim (amount short, wrong
 // reference, etc) — see documentActions.ts's markInvoicePaid /
@@ -13,6 +14,18 @@ import type { QuotationLineItem } from "./quotations";
 // DocumentChain's bar) — the reason was only visible once you opened the
 // invoice itself. A first-class status instead of a compound one.
 export type InvoiceStatus = "Unpaid" | "Payment Submitted" | "Paid" | "Overdue" | "Payment Issue";
+
+export function invoiceDisplayStatus(
+  invoice: Pick<Invoice, "status" | "dueDate">,
+  today = demoToday(),
+): InvoiceStatus {
+  // Keep the stored status as the payment event that actually happened. An
+  // unpaid invoice becomes overdue as time passes, so the urgency shown to a
+  // user is derived rather than requiring a background job in the demo.
+  return invoice.status === "Unpaid" && !!invoice.dueDate && invoice.dueDate < today
+    ? "Overdue"
+    : invoice.status;
+}
 
 export type Invoice = {
   id: string;
@@ -46,14 +59,16 @@ export type Invoice = {
   lineItems?: QuotationLineItem[];
   discount?: number;
   vatRate?: number;
-  // Same as Quotation.fleetcoSignature — a PNG data URL captured on
-  // DocumentEditor's SignaturePad at issue time, not a real cryptographic
-  // signature. Optional for the same reason: only editor-issued invoices
-  // carry one.
+  paymentTerms?: string;
+  remarks?: string;
+  // Historical invoices issued through the former shared document editor
+  // may carry the FleetCo signature captured there. The current invoice
+  // review flow derives the document from an accepted quotation and does
+  // not request a second signature.
   fleetcoSignature?: string;
 };
 
-export const mockInvoices: Invoice[] = [
+export const mockInvoices: Invoice[] = rebaseDemoDates<Invoice[]>([
   {
     id: "INV-2026-0001", bookingId: "BK-2026-0008", quotationId: "QT-2026-0007", clientId: "CLI-001",
     isRecurring: false, amountDue: 2354, issuedAt: "2026-07-07 09:00", dueDate: "2026-08-06",
@@ -137,4 +152,4 @@ export const mockInvoices: Invoice[] = [
     discount: 0, vatRate: 0.07,
     created: "2026-08-14 09:00", updated: "2026-08-15 16:20",
   },
-];
+]);

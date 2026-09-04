@@ -81,14 +81,24 @@ export const ROLE_PORTAL: Record<AdminRole, "fleetco" | "client"> = {
 };
 
 // Path prefixes each role may access. Empty array = unrestricted within their portal.
+// /ops/account and /portal/account (AccountSettings.tsx) are added to every
+// restricted role below, on both sides — Reset Password isn't an "Admin"
+// or "Billing" concern scoped to a subset of roles, it's personal, and every
+// signed-in role needs to reach its own copy regardless of what else they
+// can see. platform_admin/read_only/client_admin already get it for free
+// via their empty (unrestricted) arrays.
+// /portal/company (CompanyProfile.tsx) gets the same treatment on the
+// client side only — viewing your own org's tax-branch registry isn't a
+// "Billing" or "Rentals" concern scoped to a subset of client roles either,
+// it's every client user's own record.
 export const ROLE_ALLOWED: Record<AdminRole, string[]> = {
   platform_admin: [],
   // /ops/bookings kept in both even though the list pages moved to
   // /ops/requests + /ops/rentals — /ops/bookings/:id (the detail route)
   // still lives under that prefix, and both roles need it.
-  ops_manager: ["/ops/dashboard", "/ops/requests", "/ops/rentals", "/ops/bookings", "/ops/calendar", "/ops/fleet", "/ops/drivers", "/ops/tracking"],
-  account_manager: ["/ops/dashboard", "/ops/clients", "/ops/requests", "/ops/rentals", "/ops/bookings", "/ops/documents/quotations", "/ops/revenue"],
-  finance: ["/ops/dashboard", "/ops/documents/invoices", "/ops/documents/tax-invoices", "/ops/revenue", "/ops/financing"],
+  ops_manager: ["/ops/dashboard", "/ops/requests", "/ops/rentals", "/ops/bookings", "/ops/calendar", "/ops/fleet", "/ops/drivers", "/ops/tracking", "/ops/account"],
+  account_manager: ["/ops/dashboard", "/ops/clients", "/ops/requests", "/ops/rentals", "/ops/bookings", "/ops/documents/quotations", "/ops/revenue", "/ops/account"],
+  finance: ["/ops/dashboard", "/ops/documents/invoices", "/ops/documents/tax-invoices", "/ops/revenue", "/ops/financing", "/ops/account"],
   read_only: [],
   client_admin: [],
   // /portal/bookings/:id (a single booking's detail — see BookingDetail.tsx)
@@ -97,9 +107,9 @@ export const ROLE_ALLOWED: Record<AdminRole, string[]> = {
   // path to check. Now that it's a real route, each role that can already
   // reach at least one booking list needs it allowlisted too, or clicking a
   // row would bounce them straight back to their own default page.
-  client_approver: ["/portal/dashboard", "/portal/requests", "/portal/rentals", "/portal/tracking", "/portal/documents/quotations", "/portal/bookings"],
-  client_requester: ["/portal/requests", "/portal/rentals", "/portal/tracking", "/portal/bookings"],
-  client_finance: ["/portal/documents/invoices", "/portal/documents/tax-invoices", "/portal/billing-history", "/portal/rentals", "/portal/bookings"],
+  client_approver: ["/portal/dashboard", "/portal/requests", "/portal/rentals", "/portal/tracking", "/portal/documents/quotations", "/portal/documents/invoices", "/portal/bookings", "/portal/company", "/portal/account"],
+  client_requester: ["/portal/requests", "/portal/rentals", "/portal/tracking", "/portal/bookings", "/portal/company", "/portal/account"],
+  client_finance: ["/portal/documents/quotations", "/portal/documents/invoices", "/portal/documents/tax-invoices", "/portal/billing-history", "/portal/rentals", "/portal/bookings", "/portal/company", "/portal/account"],
 };
 
 // /ops/dashboard and /portal/dashboard used to be the default landing page

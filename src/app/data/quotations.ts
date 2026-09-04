@@ -1,7 +1,9 @@
 // Quotations — brief §6. First step of the Quotation → Invoice → Tax Invoice chain.
 import type { VehicleClass } from "./vehicles";
+import { demoToday, rebaseDemoDates } from "./demoDates";
 
 export type QuotationStatus = "Draft" | "Issued" | "Accepted" | "Declined" | "Superseded";
+export type QuotationDisplayStatus = QuotationStatus | "Expired";
 
 export type QuotationLineItem = {
   description: string;
@@ -51,19 +53,31 @@ export function quotationTotals(q: Quotation) {
   return { subtotal, afterDiscount, vat, grandTotal };
 }
 
-export const mockQuotations: Quotation[] = [
+// Expiry is derived from the validity date, not stored as a second mutable
+// status. That keeps the document record faithful to what was issued while
+// every screen can consistently stop presenting an old quotation as an open
+// approval task.
+export function isQuotationExpired(q: Pick<Quotation, "status" | "validUntil">, today = demoToday()): boolean {
+  return q.status === "Issued" && !!q.validUntil && q.validUntil < today;
+}
+
+export function quotationDisplayStatus(q: Pick<Quotation, "status" | "validUntil">, today?: string): QuotationDisplayStatus {
+  return isQuotationExpired(q, today) ? "Expired" : q.status;
+}
+
+export const mockQuotations: Quotation[] = rebaseDemoDates<Quotation[]>([
   {
     id: "QT-2026-0001", version: 1, bookingId: "BK-2026-0002", clientId: "CLI-001",
     lineItems: [{ description: "Pickup truck — Bang Sue campaign support (7 days)", vehicleClass: "Pickup", quantity: 1, unit: "vehicle (7-day period)", unitPrice: 11200, amount: 11200 }],
     discount: 0, vatRate: 0.07, remarks: "Rate includes dedicated driver. Fuel excluded.",
-    paymentTerms: "Net 30 from invoice date.", validUntil: "2026-08-18",
+    paymentTerms: "Net 30 from invoice date", validUntil: "2026-08-18",
     status: "Issued", issuedAt: "2026-08-12 10:00", created: "2026-08-12 10:00", updated: "2026-08-12 10:00",
   },
   {
     id: "QT-2026-0014", version: 1, bookingId: "BK-2026-0020", clientId: "CLI-001",
     lineItems: [{ description: "Van — two-vehicle ecommerce parcel surge (8 days)", vehicleClass: "Van", quantity: 2, unit: "vehicle (8-day period)", unitPrice: 15400, amount: 30800 }],
     discount: 800, vatRate: 0.07, remarks: "Includes dedicated drivers for both vans. Fuel excluded.",
-    paymentTerms: "Net 30 from invoice date.", validUntil: "2026-08-27",
+    paymentTerms: "Net 30 from invoice date", validUntil: "2026-08-27",
     status: "Issued", issuedAt: "2026-08-20 14:30", created: "2026-08-20 14:30", updated: "2026-08-20 14:30",
   },
   {
@@ -77,28 +91,28 @@ export const mockQuotations: Quotation[] = [
     id: "QT-2026-0016", version: 1, bookingId: "BK-2026-0022", clientId: "CLI-001",
     lineItems: [{ description: "Van — regional parcel sorting support (7 days)", vehicleClass: "Van", quantity: 2, unit: "vehicle (7-day period)", unitPrice: 16800, amount: 33600 }],
     discount: 1000, vatRate: 0.07, remarks: "Includes dedicated drivers for both vans. Fuel excluded.",
-    paymentTerms: "Net 30 from invoice date.", validUntil: "2026-08-29",
+    paymentTerms: "Net 30 from invoice date", validUntil: "2026-08-29",
     status: "Accepted", issuedAt: "2026-08-22 10:00", created: "2026-08-22 10:00", updated: "2026-08-23 11:30",
   },
   {
     id: "QT-2026-0017", version: 1, bookingId: "BK-2026-0023", clientId: "CLI-001",
     lineItems: [{ description: "Pickup — east Bangkok transfer routes (15 days)", vehicleClass: "Pickup", quantity: 1, unit: "vehicle (15-day period)", unitPrice: 24500, amount: 24500 }],
     discount: 0, vatRate: 0.07, remarks: "Dedicated vehicle and driver. Fuel excluded.",
-    paymentTerms: "Net 30 from invoice date.", validUntil: "2026-08-28",
+    paymentTerms: "Net 30 from invoice date", validUntil: "2026-08-28",
     status: "Accepted", issuedAt: "2026-08-21 09:30", created: "2026-08-21 09:30", updated: "2026-08-22 15:15",
   },
   {
     id: "QT-2026-0002", version: 1, bookingId: "BK-2026-0003", clientId: "CLI-001",
     lineItems: [{ description: "4-Wheel truck — September peak capacity (28 days)", vehicleClass: "4-Wheel Truck", quantity: 1, unit: "vehicle (28-day period)", unitPrice: 64400, amount: 64400 }],
     discount: 2000, vatRate: 0.07, remarks: "Includes fuel card for FleetCo-managed refuelling.",
-    paymentTerms: "Net 30 from invoice date.", validUntil: "2026-08-20",
+    paymentTerms: "Net 30 from invoice date", validUntil: "2026-08-20",
     status: "Accepted", issuedAt: "2026-08-06 10:00", created: "2026-08-06 10:00", updated: "2026-08-09 15:20",
   },
   {
     id: "QT-2026-0003", version: 1, bookingId: "BK-2026-0006", clientId: "CLI-001",
     lineItems: [{ description: "Pickup truck — 7 days", vehicleClass: "Pickup", quantity: 1, unit: "vehicle (7-day period)", unitPrice: 11200, amount: 11200 }],
     discount: 0, vatRate: 0.07, remarks: "",
-    paymentTerms: "Net 30 from invoice date.", validUntil: "2026-08-15",
+    paymentTerms: "Net 30 from invoice date", validUntil: "2026-08-15",
     status: "Accepted", issuedAt: "2026-08-08 14:00", created: "2026-08-08 14:00", updated: "2026-08-10 11:00",
   },
   {
@@ -112,42 +126,42 @@ export const mockQuotations: Quotation[] = [
     id: "QT-2026-0005", version: 1, bookingId: "BK-2026-0005", clientId: "CLI-001",
     lineItems: [{ description: "4-Wheel truck — same-day overflow delivery", vehicleClass: "4-Wheel Truck", quantity: 1, unit: "vehicle (1 day)", unitPrice: 2800, amount: 2800 }],
     discount: 0, vatRate: 0.07, remarks: "Same-day dispatch, subject to availability.",
-    paymentTerms: "Net 30 from invoice date.", validUntil: "2026-08-14",
+    paymentTerms: "Net 30 from invoice date", validUntil: "2026-08-14",
     status: "Accepted", issuedAt: "2026-08-13 17:00", created: "2026-08-13 17:00", updated: "2026-08-14 08:30",
   },
   {
     id: "QT-2026-0006", version: 1, bookingId: "BK-2026-0007", clientId: "CLI-001",
     lineItems: [{ description: "Pickup truck — 7 days", vehicleClass: "Pickup", quantity: 1, unit: "vehicle (7-day period)", unitPrice: 11200, amount: 11200 }],
     discount: 0, vatRate: 0.07, remarks: "",
-    paymentTerms: "Net 30 from invoice date.", validUntil: "2026-07-30",
+    paymentTerms: "Net 30 from invoice date", validUntil: "2026-07-30",
     status: "Accepted", issuedAt: "2026-07-23 09:00", created: "2026-07-23 09:00", updated: "2026-07-26 10:00",
   },
   {
     id: "QT-2026-0007", version: 1, bookingId: "BK-2026-0008", clientId: "CLI-001",
     lineItems: [{ description: "Van — single-day delivery run", vehicleClass: "Van", quantity: 1, unit: "vehicle (1 day)", unitPrice: 2200, amount: 2200 }],
     discount: 0, vatRate: 0.07, remarks: "",
-    paymentTerms: "Net 30 from invoice date.", validUntil: "2026-08-10",
+    paymentTerms: "Net 30 from invoice date", validUntil: "2026-08-10",
     status: "Accepted", issuedAt: "2026-07-06 08:30", created: "2026-07-06 08:30", updated: "2026-07-06 09:15",
   },
   {
     id: "QT-2026-0008", version: 1, bookingId: "BK-2026-0009", clientId: "CLI-001",
     lineItems: [{ description: "4-Wheel truck — 7 days", vehicleClass: "4-Wheel Truck", quantity: 1, unit: "vehicle (7-day period)", unitPrice: 17500, amount: 17500 }],
     discount: 500, vatRate: 0.07, remarks: "Repeat-client discount applied.",
-    paymentTerms: "Net 30 from invoice date.", validUntil: "2026-07-22",
+    paymentTerms: "Net 30 from invoice date", validUntil: "2026-07-22",
     status: "Accepted", issuedAt: "2026-07-15 09:30", created: "2026-07-15 09:30", updated: "2026-07-18 11:00",
   },
   {
     id: "QT-2026-0009", version: 1, bookingId: "BK-2026-0010", clientId: "CLI-001",
     lineItems: [{ description: "6-Wheel truck — 28 days", vehicleClass: "6-Wheel Truck", quantity: 1, unit: "vehicle (28-day period)", unitPrice: 98000, amount: 98000 }],
     discount: 3000, vatRate: 0.07, remarks: "Volume discount applied.",
-    paymentTerms: "Net 30 from invoice date.", validUntil: "2026-05-20",
+    paymentTerms: "Net 30 from invoice date", validUntil: "2026-05-20",
     status: "Accepted", issuedAt: "2026-05-16 10:00", created: "2026-05-16 10:00", updated: "2026-05-19 09:00",
   },
   {
     id: "QT-2026-0010", version: 1, bookingId: "BK-2026-0011", clientId: "CLI-001",
     lineItems: [{ description: "Van — single-day delivery run", vehicleClass: "Van", quantity: 3, unit: "vehicle (1 day)", unitPrice: 2200, amount: 6600 }],
     discount: 0, vatRate: 0.07, remarks: "",
-    paymentTerms: "Net 30 from invoice date.", validUntil: "2026-08-14",
+    paymentTerms: "Net 30 from invoice date", validUntil: "2026-08-14",
     status: "Declined", issuedAt: "2026-08-12 15:00", created: "2026-08-12 15:00", updated: "2026-08-13 09:00",
   },
   {
@@ -157,7 +171,7 @@ export const mockQuotations: Quotation[] = [
     id: "QT-2026-0011", version: 1, bookingId: "BK-2026-0014", clientId: "CLI-001",
     lineItems: [{ description: "4-Wheel truck — two-truck relief run (8 days)", vehicleClass: "4-Wheel Truck", quantity: 2, unit: "vehicle (8-day period)", unitPrice: 20000, amount: 40000 }],
     discount: 0, vatRate: 0.07, remarks: "Two trucks dispatched together for provincial distribution coverage.",
-    paymentTerms: "Net 30 from invoice date.", validUntil: "2026-09-10",
+    paymentTerms: "Net 30 from invoice date", validUntil: "2026-09-10",
     status: "Accepted", issuedAt: "2026-08-15 10:00", created: "2026-08-15 10:00", updated: "2026-08-16 09:00",
   },
   {
@@ -166,7 +180,7 @@ export const mockQuotations: Quotation[] = [
     id: "QT-2026-0012", version: 1, bookingId: "BK-2026-0016", clientId: "CLI-001",
     lineItems: [{ description: "4-Wheel truck — regional distribution run (5 days)", vehicleClass: "4-Wheel Truck", quantity: 1, unit: "vehicle (5-day period)", unitPrice: 1800, amount: 9000 }],
     discount: 0, vatRate: 0.07, remarks: "",
-    paymentTerms: "Net 30 from invoice date.", validUntil: "2026-08-04",
+    paymentTerms: "Net 30 from invoice date", validUntil: "2026-08-04",
     status: "Accepted", issuedAt: "2026-07-29 09:00", created: "2026-07-29 09:00", updated: "2026-07-30 10:00",
   },
   {
@@ -177,7 +191,34 @@ export const mockQuotations: Quotation[] = [
     id: "QT-2026-0013", version: 1, bookingId: "BK-2026-0017", clientId: "CLI-001",
     lineItems: [{ description: "Pickup — provincial route (monthly recurring)", vehicleClass: "Pickup", quantity: 1, unit: "vehicle / month", unitPrice: 40500, amount: 40500 }],
     discount: 0, vatRate: 0.07, remarks: "Monthly recurring rate; first cycle billed in advance, due before pickup.",
-    paymentTerms: "Net 14 from invoice date — due before pickup.", validUntil: "2026-08-17",
+    paymentTerms: "Net 14 from invoice date", validUntil: "2026-08-17",
     status: "Accepted", issuedAt: "2026-08-10 09:00", created: "2026-08-10 09:00", updated: "2026-08-12 11:00",
   },
-];
+  {
+    // Matches BK-2026-0024 — the near-term booking used to demonstrate the
+    // manual Start Rental action. It still has to pass through quotation
+    // acceptance before assignment or invoicing.
+    id: "QT-2026-0018", version: 1, bookingId: "BK-2026-0024", clientId: "CLI-001",
+    lineItems: [{ description: "4-Wheel truck — short relief run (5 days)", vehicleClass: "4-Wheel Truck", quantity: 1, unit: "vehicle (5-day period)", unitPrice: 9000, amount: 9000 }],
+    discount: 0, vatRate: 0.07, remarks: "Includes dedicated driver. Fuel excluded.",
+    paymentTerms: "Net 30 from invoice date", validUntil: "2026-09-05",
+    status: "Accepted", issuedAt: "2026-08-27 10:00", created: "2026-08-27 10:00", updated: "2026-08-28 14:00",
+  },
+  {
+    // Matches BK-2026-0025 — accepted and assigned before the client
+    // cancelled the rental, so the booking stays in rental history.
+    id: "QT-2026-0019", version: 1, bookingId: "BK-2026-0025", clientId: "CLI-001",
+    lineItems: [{ description: "Pickup — regional overflow coverage (8 days)", vehicleClass: "Pickup", quantity: 1, unit: "vehicle (8-day period)", unitPrice: 14000, amount: 14000 }],
+    discount: 0, vatRate: 0.07, remarks: "Includes dedicated driver. Fuel excluded.",
+    paymentTerms: "Net 30 from invoice date", validUntil: "2026-09-01",
+    status: "Accepted", issuedAt: "2026-08-25 10:00", created: "2026-08-25 10:00", updated: "2026-08-26 15:30",
+  },
+  {
+    // Matches BK-2026-0026 — accepted, then cancelled before assignment.
+    id: "QT-2026-0020", version: 1, bookingId: "BK-2026-0026", clientId: "CLI-001",
+    lineItems: [{ description: "Van — campaign support (22 days)", vehicleClass: "Van", quantity: 1, unit: "vehicle (22-day period)", unitPrice: 42000, amount: 42000 }],
+    discount: 0, vatRate: 0.07, remarks: "Dedicated vehicle and driver. Fuel excluded.",
+    paymentTerms: "Net 30 from invoice date", validUntil: "2026-09-03",
+    status: "Accepted", issuedAt: "2026-08-27 09:30", created: "2026-08-27 09:30", updated: "2026-08-28 11:00",
+  },
+]);

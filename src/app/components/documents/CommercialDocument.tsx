@@ -1,10 +1,17 @@
+/** @jsxImportSource react */
 import type { Booking } from "@/app/data/bookings";
 import type { ClientAccount } from "@/app/data/clients";
+import { getTaxBranch } from "@/app/data/clients";
 import { formatCurrency } from "@/app/data/formatters";
 import type { QuotationLineItem } from "@/app/data/quotations";
-import { formatDate } from "@/app/components/ui/utils";
+import { formatBilingualDocumentDate as formatDate } from "@/app/i18n";
 import { thaiBahtText } from "@/app/lib/thaiBahtText";
+import fleetcoLogo from "@/assets/fleetco-logo.svg";
+// Shared with the two editors' sidebars, which show this total before the
+// sheet below has rendered it — one definition, so they cannot disagree.
+import { computeDocumentTotals } from "@/app/lib/documentTotals";
 import { A4Document } from "@/app/components/documents/A4Document";
+import { demoToday } from "@/app/data/demoDates";
 
 export type CommercialDocumentMode = "quotation" | "invoice";
 
@@ -35,14 +42,6 @@ interface CommercialDocumentProps {
   paymentInfo?: PaymentInfo;
 }
 
-function computeTotals(lineItems: QuotationLineItem[], discount: number, vatRate: number, amountDueOverride?: number) {
-  const subtotal = lineItems.reduce((sum, li) => sum + li.amount, 0);
-  const afterDiscount = Math.max(0, subtotal - discount);
-  const vat = Math.round(afterDiscount * vatRate);
-  const grandTotal = amountDueOverride ?? afterDiscount + vat;
-  return { subtotal, vat, grandTotal };
-}
-
 export function CommercialDocument({
   mode,
   docNumber,
@@ -67,14 +66,24 @@ export function CommercialDocument({
   const titleTh = mode === "quotation" ? "ใบเสนอราคา" : "ใบแจ้งหนี้";
   const validLabel = mode === "quotation" ? "Valid until / ใช้ได้ถึง:" : "Due / ครบกำหนด:";
   const hasLineItems = lineItems.length > 0;
-  const totals = computeTotals(lineItems, discount, vatRate, amountDueOverride);
+  const totals = computeDocumentTotals(lineItems, discount, vatRate, amountDueOverride);
   const showPaymentInfo = !!paymentInfo?.date && (mode === "invoice");
+  const taxBranch = getTaxBranch(client, booking?.taxBranchId);
+  const rentalPeriodDates = booking
+    ? {
+        en: `${formatDate(booking.startDate).split(" / ")[0]} – ${formatDate(booking.endDate).split(" / ")[0]}`,
+        th: `${formatDate(booking.startDate).split(" / ")[1]} – ${formatDate(booking.endDate).split(" / ")[1]}`,
+      }
+    : null;
+  const rentalPeriodDays = booking
+    ? Math.round((new Date(`${booking.endDate}T00:00:00`).getTime() - new Date(`${booking.startDate}T00:00:00`).getTime()) / 86400000) + 1
+    : null;
 
   const head = (
     <div className="print:break-inside-avoid">
       <div className="flex items-start justify-between border-b border-slate-200 pb-4">
         <div className="flex items-center gap-3">
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-lg font-bold text-white">FC</div>
+          <img src={fleetcoLogo} alt="FleetCo" className="h-11 w-16 shrink-0 object-contain object-left" />
           <div>
             <p className="font-semibold text-slate-900">FleetCo Operations Co., Ltd.</p>
             <p className="text-[12px] text-slate-500">บริษัท ฟลีทโค โอเปอเรชั่นส์ จำกัด</p>
@@ -90,21 +99,22 @@ export function CommercialDocument({
         <div className="flex-1">
           <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">From (Seller) / ผู้ขาย</p>
           <p className="font-semibold text-slate-900">FleetCo Operations Co., Ltd.</p>
-          <p className="mt-1 max-w-[220px] leading-snug text-slate-500">Entity registration and tax details pending.</p>
+          <p className="mt-1 max-w-[220px] leading-snug text-slate-500">99 Ratchadaphisek Rd, Huai Khwang, Bangkok 10310, Thailand</p>
+          <p className="mt-1 text-slate-500">Tax ID / เลขผู้เสียภาษี: 0105568123456</p>
         </div>
         <div className="flex-1">
           <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">To (Buyer) / ผู้ซื้อ</p>
           <p className="font-semibold text-slate-900">{client?.name ?? booking?.clientId ?? "Client"}</p>
-          {client?.registeredAddress && <p className="mt-1 max-w-[260px] leading-snug text-slate-500">{client.registeredAddress}</p>}
+          {(taxBranch?.addressEn || client?.registeredAddress) && <p className="mt-1 max-w-[260px] leading-snug text-slate-500">{taxBranch?.addressEn ?? client?.registeredAddress}</p>}
           {client?.taxId && <p className="mt-1 text-slate-500">Tax ID / เลขผู้เสียภาษี: {client.taxId}</p>}
-          {client?.branch && <p className="text-slate-500">Branch / สาขา: {client.branch}</p>}
+          {(taxBranch || client?.branch) && <p className="text-slate-500">Tax registration branch / สาขาภาษี: {taxBranch ? `${taxBranch.code} · ${taxBranch.isHeadOffice ? "Head Office" : taxBranch.legalNameEn}` : client?.branch}</p>}
         </div>
       </div>
 
       <div className="grid grid-cols-4 gap-3 border-y border-slate-100 py-2.5 text-[12px]">
         <div>
           <p className="text-slate-400">Document No.</p>
-          <p className="font-semibold text-slate-800">{draft ? "Draft — not yet issued" : docNumber}</p>
+          <p className="font-semibold text-slate-800">{docNumber}</p>
         </div>
         <div>
           <p className="text-slate-400">Version</p>
@@ -112,7 +122,7 @@ export function CommercialDocument({
         </div>
         <div>
           <p className="text-slate-400">Date / วันที่</p>
-          <p className="font-semibold text-slate-800">{issueDate ? formatDate(issueDate) : formatDate(new Date().toISOString().slice(0, 10))}</p>
+          <p className="font-semibold text-slate-800">{formatDate(issueDate || demoToday())}</p>
         </div>
         <div>
           <p className="text-slate-400">{validLabel}</p>
@@ -125,26 +135,34 @@ export function CommercialDocument({
 
   const columns = hasLineItems ? (
     <tr className="border-b-2 border-slate-800 text-slate-500">
-      <th className="w-6 py-2 text-left font-medium">#</th>
-      <th className="py-2 text-left font-medium">Description / รายละเอียด</th>
-      <th className="w-14 py-2 text-right font-medium">Qty</th>
-      <th className="w-24 py-2 text-left font-medium">Unit / หน่วย</th>
-      <th className="w-28 py-2 text-right font-medium">Unit Price</th>
-      <th className="w-28 py-2 text-right font-medium">Amount</th>
+      <th className="w-6 py-2.5 text-left font-medium">#</th>
+      <th className="py-2.5 pr-3 text-left font-medium">Description / รายละเอียด</th>
+      <th className="w-16 whitespace-nowrap py-2.5 pr-2 text-right font-medium"><span className="block">Qty</span><span className="text-[9px]">จำนวน</span></th>
+      <th className="w-40 py-2.5 pl-3 text-left font-medium"><span className="block">Rental period</span><span className="text-[9px]">ระยะเวลาเช่า</span></th>
+      <th className="w-32 whitespace-nowrap py-2.5 text-right font-medium">Unit Price</th>
+      <th className="w-32 whitespace-nowrap py-2.5 text-right font-medium">Amount</th>
     </tr>
   ) : undefined;
 
   const rows = lineItems.map((li, i) => (
     <tr key={i} className="border-b border-slate-100 align-top print:break-inside-avoid">
-      <td className="py-2 text-slate-400">{i + 1}</td>
-      <td className="py-2 pr-2">
+      <td className="py-2.5 text-slate-400">{i + 1}</td>
+      <td className="py-2.5 pr-3">
         <p className="text-slate-800">{li.description || "—"}</p>
         <p className="text-[10px] text-slate-400">{li.vehicleClass}</p>
       </td>
-      <td className="py-2 text-right text-slate-700">{li.quantity}</td>
-      <td className="py-2 text-slate-700">{li.unit}</td>
-      <td className="py-2 text-right text-slate-700">{formatCurrency(li.unitPrice)}</td>
-      <td className="py-2 text-right font-medium text-slate-900">{formatCurrency(li.amount)}</td>
+      <td className="py-2.5 pr-2 text-right text-slate-700">{li.quantity}</td>
+      <td className="py-2.5 pl-3 text-slate-700">
+        {rentalPeriodDates ? (
+          <>
+            <p className="whitespace-nowrap text-[10px]">{rentalPeriodDates.en}</p>
+            <p className="whitespace-nowrap text-[9px] text-slate-400">{rentalPeriodDates.th}</p>
+          </>
+        ) : <p>—</p>}
+        {rentalPeriodDays && <p className="text-[10px] text-slate-400">{rentalPeriodDays} days</p>}
+      </td>
+      <td className="py-2.5 text-right text-slate-700">{formatCurrency(li.unitPrice)}</td>
+      <td className="py-2.5 text-right font-medium text-slate-900">{formatCurrency(li.amount)}</td>
     </tr>
   ));
 
@@ -177,22 +195,33 @@ export function CommercialDocument({
         </div>
       )}
 
-      <div className="mt-14 flex justify-between text-[11px] text-slate-400">
-        <div className="w-44 text-center">
-          <div className="flex h-12 items-end justify-center border-b border-slate-300">
-            {fleetcoSignature && <img src={fleetcoSignature} alt="FleetCo signature" className="mb-0.5 h-11 object-contain" />}
+      {mode === "quotation" ? (
+        <div className="mt-14 flex justify-between text-[11px] text-slate-400">
+          <div className="w-44 text-center">
+            <div className="flex h-12 items-end justify-center border-b border-slate-300">
+              {fleetcoSignature && <img src={fleetcoSignature} alt="FleetCo signature" className="mb-0.5 h-11 object-contain" />}
+            </div>
+            <p className="mt-1">Authorized Signature — FleetCo</p>
+            <p>ลายมือชื่อผู้มีอำนาจ — ฟลีทโค</p>
           </div>
-          <p className="mt-1">Authorized Signature — FleetCo</p>
-          <p>ลายมือชื่อผู้มีอำนาจ — ฟลีทโค</p>
-        </div>
-        <div className="w-44 text-center">
-          <div className="flex h-12 items-end justify-center border-b border-slate-300">
-            {clientSignature && <img src={clientSignature} alt="Client signature" className="mb-0.5 h-11 object-contain" />}
+          <div className="w-44 text-center">
+            <div className="flex h-12 items-end justify-center border-b border-slate-300">
+              {clientSignature && <img src={clientSignature} alt="Client signature" className="mb-0.5 h-11 object-contain" />}
+            </div>
+            <p className="mt-1">Authorized Signature — Client</p>
+            <p>ลายมือชื่อผู้มีอำนาจ — ลูกค้า</p>
           </div>
-          <p className="mt-1">Authorized Signature — Client</p>
-          <p>ลายมือชื่อผู้มีอำนาจ — ลูกค้า</p>
         </div>
-      </div>
+      ) : (
+        <div className="mt-14 border-t border-slate-100 pt-4 text-[11px] text-slate-500">
+          <p><span className="text-slate-400">Issuer / ผู้ออกเอกสาร:</span> FleetCo Operations Co., Ltd.</p>
+          {draft ? (
+            <p className="mt-1 text-slate-400">Draft — not yet issued</p>
+          ) : issueDate ? (
+            <p className="mt-1"><span className="text-slate-400">Issued / วันที่ออก:</span> {formatDate(issueDate)}</p>
+          ) : null}
+        </div>
+      )}
     </div>
   );
 

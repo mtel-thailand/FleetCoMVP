@@ -227,6 +227,7 @@ export function SignaturePad({
         <button
           type="button"
           onClick={() => switchMode("type")}
+          aria-pressed={mode === "type"}
           className={`flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium cursor-pointer ${mode === "type" ? "bg-slate-800 text-white" : "bg-slate-100 text-slate-500 hover:bg-slate-200"}`}
         >
           <Type size={11} /> Type
@@ -234,6 +235,7 @@ export function SignaturePad({
         <button
           type="button"
           onClick={() => switchMode("draw")}
+          aria-pressed={mode === "draw"}
           className={`flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium cursor-pointer ${mode === "draw" ? "bg-slate-800 text-white" : "bg-slate-100 text-slate-500 hover:bg-slate-200"}`}
         >
           <PenLine size={11} /> Draw
@@ -241,6 +243,7 @@ export function SignaturePad({
         <button
           type="button"
           onClick={() => switchMode("upload")}
+          aria-pressed={mode === "upload"}
           className={`flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium cursor-pointer ${mode === "upload" ? "bg-slate-800 text-white" : "bg-slate-100 text-slate-500 hover:bg-slate-200"}`}
         >
           <Upload size={11} /> Upload
@@ -251,6 +254,7 @@ export function SignaturePad({
         <input
           value={typedName}
           onChange={(e) => setTypedName(e.target.value)}
+          aria-label="Signature name"
           placeholder="Type your full name"
           className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mb-2 focus:outline-none focus:ring-2 focus:ring-[var(--portal-accent)]"
           style={{ fontFamily: `"Dancing Script", cursive` }}
@@ -285,6 +289,8 @@ export function SignaturePad({
         onPointerMove={mode === "draw" ? move : undefined}
         onPointerUp={mode === "draw" ? end : undefined}
         onPointerLeave={mode === "draw" ? end : undefined}
+        role="img"
+        aria-label="Signature drawing area. Use Type mode to enter your full name."
         className={`border border-slate-200 rounded-lg bg-white block w-full ${mode === "draw" ? "touch-none cursor-crosshair" : ""}`}
         style={{ aspectRatio: `${width} / ${height}` }}
       />

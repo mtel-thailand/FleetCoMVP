@@ -1,5 +1,10 @@
-import { useRef, useState } from "react";
+import { useId, useRef, useState } from "react";
+import { Button } from "@/app/components/ui/Button";
+import { Input } from "@/app/components/ui/Input";
+import { Label } from "@/app/components/ui/Label";
+import { DatePicker } from "@/app/components/ui/DatePicker";
 import { Upload, X, FileImage, FileText } from "lucide-react";
+import { demoToday } from "@/app/data/demoDates";
 
 // InvoiceDetail's own Mark-as-Paid flow — one call site (documentActions.ts's
 // markInvoicePaid), pulled out for the same "keep the form and its trigger
@@ -19,12 +24,19 @@ function fileIcon(name: string) {
   return name.toLowerCase().endsWith(".pdf") ? FileText : FileImage;
 }
 
-export function MarkPaidForm({ onCancel, onConfirm }: { onCancel: () => void; onConfirm: (date: string, reference: string, slipFiles: string[]) => void }) {
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+export function MarkPaidForm({ onCancel, onConfirm, submitLabel = "Submit Payment Details" }: {
+  onCancel?: () => void;
+  onConfirm: (date: string, reference: string, slipFiles: string[]) => void;
+  submitLabel?: string;
+}) {
+  const [date, setDate] = useState(demoToday());
   const [reference, setReference] = useState("");
   const [slipFiles, setSlipFiles] = useState<string[]>([]);
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const paymentDateId = useId();
+  const paymentReferenceId = useId();
+  const paymentSlipId = useId();
 
   function handleFiles(fileList: FileList | null) {
     if (!fileList || fileList.length === 0) return;
@@ -42,18 +54,17 @@ export function MarkPaidForm({ onCancel, onConfirm }: { onCancel: () => void; on
   return (
     <div className="bg-slate-50 rounded-xl p-4 space-y-3">
       <div>
-        <label className="text-xs font-medium text-slate-600 block mb-1">Payment Date</label>
-        <input type="date" value={date} onChange={(e) => setDate(e.target.value)}
-          className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-[var(--portal-accent)]" />
+        <Label htmlFor={paymentDateId}>Payment Date</Label>
+        <DatePicker id={paymentDateId} value={date} onChange={setDate} />
       </div>
       <div>
-        <label className="text-xs font-medium text-slate-600 block mb-1">Payment Reference / Transaction No.</label>
-        <input type="text" value={reference} onChange={(e) => setReference(e.target.value)} placeholder="e.g. bank transfer reference"
-          className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-[var(--portal-accent)]" />
+        <Label htmlFor={paymentReferenceId}>Payment Reference / Transaction No.</Label>
+        <Input id={paymentReferenceId} type="text" value={reference} onChange={(e) => setReference(e.target.value)} placeholder="e.g. bank transfer reference" />
       </div>
       <div>
-        <label className="text-xs font-medium text-slate-600 block mb-1">Payment Slip</label>
+        <Label htmlFor={paymentSlipId}>Bank Transfer Slip</Label>
         <input
+          id={paymentSlipId}
           ref={fileInputRef}
           type="file"
           multiple
@@ -92,7 +103,7 @@ export function MarkPaidForm({ onCancel, onConfirm }: { onCancel: () => void; on
                 <div key={`${name}-${i}`} className="flex items-center gap-2 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5">
                   <Icon size={13} className="text-slate-400 shrink-0" />
                   <span className="text-[11px] text-slate-600 truncate flex-1">{name}</span>
-                  <button type="button" onClick={() => removeFile(i)} className="text-slate-300 hover:text-rose-500 cursor-pointer shrink-0">
+                  <button type="button" onClick={() => removeFile(i)} aria-label={`Remove ${name}`} className="text-slate-300 hover:text-rose-500 cursor-pointer shrink-0">
                     <X size={12} />
                   </button>
                 </div>
@@ -102,18 +113,20 @@ export function MarkPaidForm({ onCancel, onConfirm }: { onCancel: () => void; on
         )}
       </div>
       <p className="text-[11px] text-slate-400 leading-relaxed">
-        This records your payment as submitted. FleetCo finance will verify it and release the tax invoice at the same time.
+        Complete the bank transfer through your usual banking channel, then submit the transfer reference and bank slip here. This portal records evidence only; FleetCo finance verifies it before issuing the tax invoice.
       </p>
       <div className="flex gap-2">
-        <button onClick={onCancel} className="flex-1 py-2 border border-slate-200 rounded-lg text-xs text-slate-600 hover:bg-white cursor-pointer">
-          Cancel
-        </button>
+        {onCancel && (
+          <Button variant="outline" size="md" className="flex-1 px-0 py-2" onClick={onCancel}>
+            Cancel
+          </Button>
+        )}
         <button
           disabled={!reference.trim() || !date || slipFiles.length === 0}
           onClick={() => onConfirm(date, reference.trim(), slipFiles)}
-          className="flex-1 py-2 bg-[var(--portal-accent)] text-white rounded-lg text-xs font-medium hover:bg-[var(--portal-accent-hover)] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+          className={`${onCancel ? "flex-1" : "w-full"} py-2 bg-[var(--portal-accent)] text-white rounded-lg text-xs font-medium hover:bg-[var(--portal-accent-hover)] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer`}
         >
-          Submit Payment
+          {submitLabel}
         </button>
       </div>
     </div>

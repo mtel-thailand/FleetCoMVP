@@ -1,21 +1,35 @@
-import { useState } from "react";
-import { useNavigate } from "react-router";
-import { Printer, ShieldCheck, Receipt, ArrowRight, FileCheck2, Ban } from "lucide-react";
+import { useState, type ReactNode } from "react";
+import { Button } from "@/app/components/ui/Button";
+import { useLocation, useNavigate } from "react-router";
+import { Receipt, ArrowRight, FileCheck2, FileText, Ban } from "lucide-react";
+import type { Booking } from "@/app/data/bookings";
+import type { ClientAccount } from "@/app/data/clients";
+import type { TaxInvoice } from "@/app/data/taxInvoices";
 import type { Invoice } from "@/app/data/invoices";
+import { formatCurrency } from "@/app/data/formatters";
 import { useClients } from "@/app/lib/clientsStore";
 import { useBookings } from "@/app/lib/bookingsStore";
+import { useQuotations } from "@/app/lib/quotationsStore";
 import { updateInvoice } from "@/app/lib/invoicesStore";
+import { toastSuccess } from "@/app/lib/toast";
 import { useTaxInvoices } from "@/app/lib/taxInvoicesStore";
 import { markInvoicePaid } from "@/app/lib/documentActions";
 import { getAdminRole, ROLE_PORTAL } from "@/app/lib/auth";
-import { useOpenBookingFromDocument, useOpenTaxInvoice } from "@/app/lib/documentNav";
-import { useBodyScrollLock } from "@/app/hooks/useBodyScrollLock";
+import { useOpenBookingFromDocument, useOpenQuotation, useOpenTaxInvoice } from "@/app/lib/documentNav";
+import { invoiceDisplayStatus } from "@/app/data/invoices";
 import { nowStamp } from "@/app/lib/taxInvoiceIssuance";
 import { StatusBadge } from "@/app/components/ui/StatusBadge";
 import { MarkPaidForm } from "@/app/components/ui/MarkPaidForm";
 import { ReasonForm } from "@/app/components/ui/ReasonForm";
 import { ActionModal } from "@/app/components/ui/ActionModal";
 import { CommercialDocument } from "@/app/components/documents/CommercialDocument";
+import {
+  DOCUMENT_PREVIEW_FRAME_CLASS,
+  DocumentPreviewFrame,
+  DocumentWorkspace,
+  EditorSection,
+} from "@/app/components/documents/DocumentWorkspace";
+import { formatDate } from "@/app/components/ui/utils";
 
 // The primary place an invoice is viewed and, when it's payable, the
 // primary place a payment is marked — same role QuotationDetail plays for
@@ -25,39 +39,215 @@ import { CommercialDocument } from "@/app/components/documents/CommercialDocumen
 // editor does); older/historical mock invoices only ever had a flat
 // amountDue, which alone still fully covers those.
 //
-// Mark-as-Paid gets a real modal (MarkPaidModal, below), not an inline swap
-// under the document — same reasoning as QuotationDetail's DeclineModal:
-// the document itself sits in its own fixed-height, internally-scrolling
-// frame, so a form appended after it lived inside that same scrollbox,
-// requiring a scroll *within* the document viewer — past the whole invoice
-// — to reach a form that opened from a button up in the header. A real
-// modal decouples the two entirely; it appears where the click happened,
-// not wherever the document viewer's scroll position leaves it.
-function MarkPaidModal({ onCancel, onConfirm }: { onCancel: () => void; onConfirm: (date: string, reference: string, slipFiles: string[]) => void }) {
-  useBodyScrollLock();
+function InvoicePreview({
+  invoice,
+  client,
+  booking,
+  lineItems,
+  discount,
+  vatRate,
+  paymentTerms,
+  remarks,
+}: {
+  invoice: Invoice;
+  client: ClientAccount | undefined;
+  booking: Booking | undefined;
+  lineItems: NonNullable<Invoice["lineItems"]>;
+  discount: number;
+  vatRate: number;
+  paymentTerms: string | undefined;
+  remarks: string | undefined;
+}) {
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4" onClick={onCancel}>
-      <div className="w-full max-w-md rounded-xl shadow-2xl" onClick={(e) => e.stopPropagation()}>
-        <MarkPaidForm onCancel={onCancel} onConfirm={onConfirm} />
-      </div>
+    <CommercialDocument
+      mode="invoice"
+      docNumber={invoice.id}
+      client={client}
+      booking={booking}
+      bookingId={invoice.bookingId}
+      lineItems={lineItems}
+      discount={discount}
+      vatRate={vatRate}
+      validUntilOrDue={invoice.dueDate}
+      issueDate={invoice.issuedAt}
+      paymentTerms={paymentTerms}
+      remarks={remarks}
+      fleetcoSignature={invoice.fleetcoSignature}
+      amountDueOverride={invoice.amountDue}
+      paymentInfo={
+        invoice.status === "Payment Submitted" || invoice.status === "Paid"
+          ? { date: invoice.paymentDate, reference: invoice.paymentReference, slipFiles: invoice.paymentSlipFiles }
+          : undefined
+      }
+    />
+  );
+}
+
+function InvoiceReviewRow({ label, value, emphasis = false }: { label: string; value: ReactNode; emphasis?: boolean }) {
+  return (
+    <div className="flex items-start justify-between gap-4 text-xs">
+      <span className="text-slate-500">{label}</span>
+      <span className={`text-right ${emphasis ? "font-semibold text-slate-900" : "text-slate-700"}`}>{value}</span>
     </div>
+  );
+}
+
+function ClientInvoiceReview({
+  invoice,
+  client,
+  booking,
+  lineItems,
+  discount,
+  vatRate,
+  paymentTerms,
+  remarks,
+  payable,
+  canMarkPaid,
+  taxInvoice,
+  onOpenTaxInvoice,
+  onSubmitPayment,
+}: {
+  invoice: Invoice;
+  client: ClientAccount | undefined;
+  booking: Booking | undefined;
+  lineItems: NonNullable<Invoice["lineItems"]>;
+  discount: number;
+  vatRate: number;
+  paymentTerms: string | undefined;
+  remarks: string | undefined;
+  payable: boolean;
+  canMarkPaid: boolean;
+  taxInvoice: TaxInvoice | undefined;
+  onOpenTaxInvoice: () => void;
+  onSubmitPayment: (date: string, reference: string, slipFiles: string[]) => void;
+}) {
+  const rentalPeriod = booking ? `${formatDate(booking.startDate)} – ${formatDate(booking.endDate)}` : "—";
+  const quantity = lineItems.length > 0
+    ? lineItems.reduce((sum, item) => sum + item.quantity, 0)
+    : booking?.quantity ?? "—";
+
+  return (
+    <DocumentWorkspace
+      title={invoice.id}
+      subtitle={`For ${client?.name ?? invoice.clientId} · ${invoice.bookingId}`}
+      sidebarWidth={400}
+      downloadFilename={`${invoice.id}.pdf`}
+      stick="preview"
+      mobileSidebarFirst
+      showLivePreviewLabel={false}
+      showHeader={false}
+      preview={
+        <InvoicePreview
+          invoice={invoice}
+          client={client}
+          booking={booking}
+          lineItems={lineItems}
+          discount={discount}
+          vatRate={vatRate}
+          paymentTerms={paymentTerms}
+          remarks={remarks}
+        />
+      }
+    >
+      <div className="flex items-center gap-2 p-4">
+        <Receipt size={16} className="text-[var(--portal-accent)]" />
+        <h2 className="text-sm font-semibold text-slate-900">Review invoice</h2>
+      </div>
+
+      <EditorSection title="Rental details">
+        <div className="rounded-lg bg-slate-50 p-3.5">
+          <div className="space-y-2.5">
+            <InvoiceReviewRow label="Rental period" value={rentalPeriod} />
+            <InvoiceReviewRow label="Vehicle class" value={lineItems[0]?.vehicleClass ?? booking?.vehicleClassRequested ?? "—"} />
+            <InvoiceReviewRow label="Quantity" value={quantity} />
+            <InvoiceReviewRow label="Delivery site" value={booking?.pickupLocation ?? "—"} />
+          </div>
+        </div>
+      </EditorSection>
+
+      <EditorSection title="Amount & terms">
+        <div className="rounded-lg bg-slate-50 p-3.5">
+          <div className="space-y-2.5">
+            <InvoiceReviewRow label="Amount due" value={formatCurrency(invoice.amountDue)} emphasis />
+          </div>
+          <div className="mt-3 border-t border-slate-200 pt-3 space-y-2.5">
+            <InvoiceReviewRow label="Due date" value={formatDate(invoice.dueDate)} />
+            <InvoiceReviewRow label="Payment terms" value={paymentTerms ?? "—"} />
+          </div>
+        </div>
+      </EditorSection>
+
+      <EditorSection title="Payment">
+        {payable && canMarkPaid ? (
+          <MarkPaidForm
+            onConfirm={onSubmitPayment}
+            submitLabel={invoice.status === "Payment Issue" ? "Resubmit Payment Details" : "Submit Payment Details"}
+          />
+        ) : (
+          <div className="rounded-lg bg-slate-50 p-3.5">
+            <div className="space-y-2.5">
+              <InvoiceReviewRow label="Status" value={<StatusBadge status={invoiceDisplayStatus(invoice)} />} />
+              {invoice.paymentDate && <InvoiceReviewRow label="Payment date" value={formatDate(invoice.paymentDate)} />}
+              {invoice.paymentReference && <InvoiceReviewRow label="Reference" value={invoice.paymentReference} />}
+            </div>
+            {invoice.status === "Payment Issue" && invoice.paymentRejectionReason && (
+              <div className="mt-3 border-t border-rose-200 pt-3">
+                <p className="mb-1 text-xs font-medium text-rose-700">Payment needs attention</p>
+                <p className="text-xs leading-relaxed text-rose-700">{invoice.paymentRejectionReason}</p>
+              </div>
+            )}
+            {invoice.status === "Payment Submitted" && (
+              <p className="mt-3 border-t border-slate-200 pt-3 text-[11px] leading-relaxed text-slate-500">
+                Payment submitted and awaiting FleetCo finance verification.
+              </p>
+            )}
+            {payable && !canMarkPaid && (
+              <p className="mt-3 border-t border-slate-200 pt-3 text-[11px] leading-relaxed text-slate-500">
+                Submit the bank transfer reference and slip for FleetCo verification.
+              </p>
+            )}
+            {taxInvoice && (
+              <button
+                type="button"
+                onClick={onOpenTaxInvoice}
+                className="mt-3 flex items-center gap-1 text-xs font-medium text-[var(--portal-accent)] hover:text-[var(--portal-accent-hover)] cursor-pointer"
+              >
+                <FileCheck2 size={12} /> View tax invoice <ArrowRight size={11} />
+              </button>
+            )}
+          </div>
+        )}
+      </EditorSection>
+    </DocumentWorkspace>
   );
 }
 
 export function InvoiceDetail({ invoice }: { invoice: Invoice }) {
   const navigate = useNavigate();
+  const location = useLocation();
   const client = useClients().find((c) => c.id === invoice.clientId);
   const booking = useBookings().find((b) => b.id === invoice.bookingId);
+  const sourceQuotation = useQuotations().find((q) => q.id === invoice.quotationId);
+  // Older demo invoices predate the detailed document snapshot and only
+  // carry the amount due. The accepted quotation is their authoritative
+  // source for the same locked line details, which lets the issued view
+  // show the rental period without changing the invoice's stored totals.
+  const lineItems = invoice.lineItems ?? sourceQuotation?.lineItems ?? [];
+  const discount = invoice.discount ?? sourceQuotation?.discount ?? 0;
+  const vatRate = invoice.vatRate ?? sourceQuotation?.vatRate ?? 0.07;
+  const paymentTerms = invoice.paymentTerms ?? sourceQuotation?.paymentTerms;
+  const remarks = invoice.remarks ?? sourceQuotation?.remarks;
   const openBooking = useOpenBookingFromDocument();
+  const openQuotation = useOpenQuotation();
   const openTaxInvoice = useOpenTaxInvoice();
   const role = getAdminRole();
-  const [showMarkPaid, setShowMarkPaid] = useState(false);
-  const [showRejectPayment, setShowRejectPayment] = useState(false);
   const isClientPortal = role ? ROLE_PORTAL[role] === "client" : false;
+  const [showRejectPayment, setShowRejectPayment] = useState(false);
   // Both portals can determine whether a tax invoice already exists so the
   // completed state can link directly to the issued document.
   const allTaxInvoices = useTaxInvoices();
   const taxInvoice = allTaxInvoices.find((t) => t.invoiceId === invoice.id);
+  const displayStatus = invoiceDisplayStatus(invoice);
   const payable = invoice.status === "Unpaid" || invoice.status === "Overdue" || invoice.status === "Payment Issue";
   // Brief §2: marking paid sits with Finance (and Approver, who also "views
   // spend dashboards"); FleetCo staff viewing this never gets to act either
@@ -72,7 +262,7 @@ export function InvoiceDetail({ invoice }: { invoice: Invoice }) {
 
   function handleMarkPaid(date: string, reference: string, slipFiles: string[]) {
     markInvoicePaid(invoice, date, reference, slipFiles);
-    setShowMarkPaid(false);
+    toastSuccess("Payment submitted for {id}.", { id: invoice.id });
   }
 
   // Status untouched either way — it never left "Invoiced"/"Active" while
@@ -83,20 +273,23 @@ export function InvoiceDetail({ invoice }: { invoice: Invoice }) {
   function handleRejectPayment(reason: string) {
     updateInvoice(invoice.id, { status: "Payment Issue", paymentRejectionReason: reason, updated: nowStamp() });
     setShowRejectPayment(false);
+    toastSuccess("Payment claim for {id} rejected.", { id: invoice.id });
   }
 
   // Same split as QuotationDetail's decisionArea — passive status context,
-  // not the form itself (that's MarkPaidModal now). Only fires when there's
+  // not the inline payment form. Only fires when there's
   // nothing actionable for *this* viewer to do: a payable invoice a
   // non-Finance role can't act on, or a submitted payment still awaiting
-  // verification. Paid invoices need no extra confirmation banner. When the
-  // viewer *can* act on a payable invoice, the header's own button is
-  // enough — no extra message needed alongside it.
+  // verification. Payment Issue is excluded because its dedicated
+  // rejection-reason banner already explains the state. Paid invoices need
+  // no extra confirmation banner. When the viewer *can* act on a payable
+  // invoice, the header's own button is enough — no extra message needed
+  // alongside it.
   let decisionArea: React.ReactNode = null;
-  if (payable && !canMarkPaid) {
-    decisionArea = <p className="text-xs text-amber-700 bg-white border border-amber-100 rounded-lg px-3 py-2.5 shadow-sm">Payment due — your finance team can mark this as paid.</p>;
+  if (payable && !canMarkPaid && invoice.status !== "Payment Issue") {
+    decisionArea = <p className="rounded-lg border border-amber-100 bg-amber-50 px-3 py-2.5 text-xs text-amber-700">Payment details are due — submit the bank transfer reference and slip for FleetCo verification.</p>;
   } else if (!payable && invoice.status === "Payment Submitted" && !opsVerifyIssue) {
-    decisionArea = <p className="text-xs text-sky-700 bg-white border border-sky-100 rounded-lg px-3 py-2.5 shadow-sm">Payment submitted — FleetCo finance is verifying it.</p>;
+    decisionArea = <p className="rounded-lg border border-sky-100 bg-sky-50 px-3 py-2.5 text-xs text-sky-700">Payment submitted — FleetCo finance is verifying it.</p>;
   }
 
   return (
@@ -105,13 +298,13 @@ export function InvoiceDetail({ invoice }: { invoice: Invoice }) {
           document's own width (see QuotationDetail's identical header for
           why). Mark-as-Paid (when it applies) gets real button weight as
           the primary action, same treatment as QuotationDetail's
-          Accept/Decline pair. Print lives in the toolbar below, not here —
-          same split QuotationDetail uses. */}
+          Accept/Decline pair. Download lives inside the document preview
+          below, not here — same split QuotationDetail uses. */}
       <div className="flex items-start justify-between gap-4 mb-5 print:hidden">
         <div className="min-w-0">
           <div className="flex items-center gap-3 flex-wrap">
             <h1 className="text-lg font-semibold text-slate-900 truncate">{invoice.id}</h1>
-            <StatusBadge status={invoice.status} />
+            <StatusBadge status={displayStatus} />
           </div>
           {/* Doc-type label dropped — see QuotationDetail.tsx's comment on
               the same line; identical redundancy, identical fix. text-xs on
@@ -121,31 +314,30 @@ export function InvoiceDetail({ invoice }: { invoice: Invoice }) {
           <p className="text-xs text-slate-500 mt-1">
             For <button onClick={() => openBooking(invoice.bookingId)} className="text-xs underline decoration-dotted hover:text-slate-800 cursor-pointer">{invoice.bookingId}</button>
           </p>
-          {taxInvoice && (
+          {taxInvoice && !isClientPortal && (
             <button
               onClick={() => openTaxInvoice(taxInvoice.id)}
               className="flex items-center gap-1 text-xs font-medium text-emerald-600 hover:text-emerald-700 mt-1.5 cursor-pointer"
             >
-              <Receipt size={12} /> Tax invoice available <ArrowRight size={11} />
+              <FileCheck2 size={12} /> Tax invoice available <ArrowRight size={11} />
+            </button>
+          )}
+          {sourceQuotation && (
+            <button
+              onClick={() => openQuotation(sourceQuotation.id)}
+              className="flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-slate-800 mt-1.5 cursor-pointer"
+            >
+              <FileText size={12} /> Source quotation {sourceQuotation.id} <ArrowRight size={11} />
             </button>
           )}
         </div>
-        {payable && canMarkPaid && (
-          <button
-            onClick={() => setShowMarkPaid(true)}
-            className="flex items-center gap-1.5 h-8 px-3 bg-[var(--portal-accent)] text-white rounded-lg text-xs font-medium hover:bg-[var(--portal-accent-hover)] cursor-pointer shrink-0"
-          >
-            <ShieldCheck size={13} /> {invoice.status === "Payment Issue" ? "Resubmit Payment" : "Mark as Paid"}
-          </button>
-        )}
         {opsVerifyIssue && (
           <div className="flex items-center gap-1.5 shrink-0">
-            <button
-              onClick={() => navigate(`/ops/documents/invoices/${invoice.id}/verify`)}
-              className="flex items-center gap-1.5 h-8 px-3 bg-[var(--portal-accent)] text-white rounded-lg text-xs font-medium hover:bg-[var(--portal-accent-hover)] cursor-pointer shrink-0"
+            <Button variant="primary" size="toolbar" className="shrink-0"
+              onClick={() => navigate(`/ops/documents/invoices/${invoice.id}/verify`, { state: location.state })}
             >
               <FileCheck2 size={13} /> Verify Payment
-            </button>
+            </Button>
             {opsVerifyIssue && (
               <button
                 onClick={() => setShowRejectPayment(true)}
@@ -159,64 +351,52 @@ export function InvoiceDetail({ invoice }: { invoice: Invoice }) {
       </div>
 
       {/* Rejection-reason banner and decisionArea sit here, in the header —
-          not inside the document's own scroll frame below (see MarkPaidModal's
-          comment for why that frame is the wrong place for anything a viewer
-          needs to actually notice or act on). Shown to every viewer of a
+          not inside the document's own scroll frame below. Shown to every
+          viewer of a
           Payment Issue invoice, not just whoever can act on it — same
           "always visible" behavior this banner already had. Gated on the
           status itself now, not the reason field's mere presence — same
           thing in practice (markInvoicePaid clears the reason the moment a
           fresh claim moves the status off Payment Issue), but the status is
           the more direct signal to read. */}
-      {invoice.status === "Payment Issue" && (
+      {!isClientPortal && invoice.status === "Payment Issue" && (
         <div className="mb-4 w-full bg-rose-50 border border-rose-100 rounded-lg px-3 py-2.5 text-xs text-rose-700 leading-relaxed">
           <span className="font-semibold">FleetCo couldn't verify your last payment: </span>
           {invoice.paymentRejectionReason}
         </div>
       )}
-      {decisionArea && <div className="mb-5 max-w-xl">{decisionArea}</div>}
+      {!isClientPortal && decisionArea && <div className="mb-5 w-full">{decisionArea}</div>}
 
-      {/* Document toolbar — just Print, right-aligned above the scrollable
-          frame below rather than inside it (see QuotationDetail's identical
-          toolbar for why, including why it's plain text rather than a
-          boxed button, and why the id doesn't repeat here). */}
-      <div className="flex justify-end mb-2 print:hidden">
-        <button
-          onClick={() => window.print()}
-          className="flex items-center gap-1.5 text-xs font-medium text-slate-500 hover:text-slate-800 cursor-pointer"
-        >
-          <Printer size={13} /> Print / Download PDF
-        </button>
-      </div>
-
-      {/* The document frame — fills the page's own width now, fixed height
-          with its own internal scroll (see QuotationDetail's identical
-          frame for the full reasoning). */}
-      <div className="bg-slate-200 rounded-2xl overflow-hidden print:bg-white print:rounded-none">
-        <div className="p-4 sm:p-8 print:p-0 h-[75vh] print:h-auto overflow-y-auto print:overflow-visible">
-          <CommercialDocument
-            mode="invoice"
-            docNumber={invoice.id}
+      {isClientPortal ? (
+        <ClientInvoiceReview
+          invoice={invoice}
+          client={client}
+          booking={booking}
+          lineItems={lineItems}
+          discount={discount}
+          vatRate={vatRate}
+          paymentTerms={paymentTerms}
+          remarks={remarks}
+          payable={payable}
+          canMarkPaid={canMarkPaid}
+          taxInvoice={taxInvoice}
+          onOpenTaxInvoice={() => taxInvoice && openTaxInvoice(taxInvoice.id)}
+          onSubmitPayment={handleMarkPaid}
+        />
+      ) : (
+        <DocumentPreviewFrame downloadFilename={`${invoice.id}.pdf`} className={DOCUMENT_PREVIEW_FRAME_CLASS}>
+          <InvoicePreview
+            invoice={invoice}
             client={client}
             booking={booking}
-            bookingId={invoice.bookingId}
-            lineItems={invoice.lineItems ?? []}
-            discount={invoice.discount ?? 0}
-            vatRate={invoice.vatRate ?? 0.07}
-            validUntilOrDue={invoice.dueDate}
-            issueDate={invoice.issuedAt}
-            fleetcoSignature={invoice.fleetcoSignature}
-            amountDueOverride={invoice.amountDue}
-            paymentInfo={
-              invoice.status === "Payment Submitted" || invoice.status === "Paid"
-                ? { date: invoice.paymentDate, reference: invoice.paymentReference, slipFiles: invoice.paymentSlipFiles }
-                : undefined
-            }
+            lineItems={lineItems}
+            discount={discount}
+            vatRate={vatRate}
+            paymentTerms={paymentTerms}
+            remarks={remarks}
           />
-        </div>
-      </div>
-
-      {showMarkPaid && <MarkPaidModal onCancel={() => setShowMarkPaid(false)} onConfirm={handleMarkPaid} />}
+        </DocumentPreviewFrame>
+      )}
 
       {showRejectPayment && (
         <ActionModal title="Reject Payment" subtitle={invoice.id} onClose={() => setShowRejectPayment(false)}>

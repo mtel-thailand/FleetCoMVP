@@ -1,5 +1,5 @@
 import { Clock, ClipboardCheck, FileText, FileCheck2, XCircle, Truck, Calendar, CheckCircle2, type LucideIcon } from "lucide-react";
-import { bookingStatusLabel, type Booking } from "@/app/data/bookings";
+import { bookingStatusLabel, isRequestBooking, type Booking } from "@/app/data/bookings";
 import { quotationTotals, type Quotation } from "@/app/data/quotations";
 import { formatCurrency } from "@/app/data/formatters";
 import { formatDate } from "./utils";
@@ -26,16 +26,17 @@ export type TimelineEntry = {
 // (quotation.issuedAt/updated), Driver and Vehicle assigned
 // (booking.assignedAt — written once, the one time a booking reaches
 // "Assigned"; see that field's own comment on Booking). Rental Period
-// started/completed reuse booking.startDate/endDate directly — those are
-// already real, stable facts already shown throughout the app (the Rental
-// Period column, Rental Details), not new tracking — gated on the booking
-// having actually reached Active/Completed respectively, so a booking
-// that's merely been *quoted* to start next month doesn't claim its rental
-// period already started. Active/Completed are the only statuses that still
-// qualify — a booking's own status is terminal at Completed (billing
-// progress past that point lives on the Invoice record, not here — see
-// bookingStatus.ts's own header comment), so there's no later status left
-// to gate on.
+// started/completed prefer booking.startedAt/completedAt — the real moment
+// Start Rental / Complete Rental were confirmed, which is what those two
+// fields exist for (see Booking's own comment on them) — falling back to
+// startDate/endDate only for older records that predate the two fields.
+// Gated on the booking having actually reached Active/Completed
+// respectively, so a booking that's merely been *quoted* to start next
+// month doesn't claim its rental period already started. Active/Completed
+// are the only statuses that still qualify — a booking's own status is
+// terminal at Completed (billing progress past that point lives on the
+// Invoice record, not here — see bookingStatus.ts's own header comment), so
+// there's no later status left to gate on.
 
 export function buildRentalTimeline(booking: Booking, quotations: Quotation[]): TimelineEntry[] {
   const entries: TimelineEntry[] = [
@@ -64,9 +65,9 @@ export function buildRentalTimeline(booking: Booking, quotations: Quotation[]): 
   const bookingLabel = bookingStatusLabel(booking);
   if (booking.status === "Cancelled") {
     entries.push({
-      label: "Request cancelled",
-      detail: booking.declineReason,
-      timestamp: booking.updated,
+      label: isRequestBooking(booking) ? "Request cancelled" : "Rental cancelled",
+      detail: booking.cancellationReason ?? booking.declineReason,
+      timestamp: booking.cancelledAt ?? booking.updated,
       icon: XCircle,
       tone: "cancelled",
     });
@@ -98,10 +99,10 @@ export function buildRentalTimeline(booking: Booking, quotations: Quotation[]): 
   }
 
   if (booking.status === "Active" || booking.status === "Completed") {
-    entries.push({ label: "Rental Period started", timestamp: booking.startDate, icon: Calendar, tone: "default" });
+    entries.push({ label: "Rental Period started", timestamp: booking.startedAt ?? booking.startDate, icon: Calendar, tone: "default" });
   }
   if (booking.status === "Completed") {
-    entries.push({ label: "Rental Period completed", timestamp: booking.endDate, icon: CheckCircle2, tone: "positive" });
+    entries.push({ label: "Rental Period completed", timestamp: booking.completedAt ?? booking.endDate, icon: CheckCircle2, tone: "positive" });
   }
 
   // Newest first — reads like an activity feed (what just happened, right at

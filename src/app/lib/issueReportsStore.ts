@@ -38,11 +38,12 @@ export function updateIssueReport(id: string, patch: Partial<IssueReport>) {
 }
 
 export function nextIssueReportId(): string {
+  const year = new Date().getFullYear();
   const nums = issueReports
     .map((r) => parseInt(r.id.split("-").pop() ?? "", 10))
     .filter((n) => !isNaN(n));
   const next = (nums.length ? Math.max(...nums) : 0) + 1;
-  return `ISS-2026-${String(next).padStart(4, "0")}`;
+  return `ISS-${year}-${String(next).padStart(4, "0")}`;
 }
 
 /** Demo-only: restores this store to its seeded state. See resetDemoData.ts. */

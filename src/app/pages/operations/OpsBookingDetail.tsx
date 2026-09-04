@@ -1,4 +1,5 @@
-import { useNavigate, useParams } from "react-router";
+import { useLocation, useNavigate, useParams } from "react-router";
+import { Button } from "@/app/components/ui/Button";
 import { ArrowLeft, FileQuestion } from "lucide-react";
 import { useBookings } from "@/app/lib/bookingsStore";
 import { useVehicles } from "@/app/lib/vehiclesStore";
@@ -24,6 +25,7 @@ import { usePageHeader } from "@/app/lib/pageHeaderStore";
 export function OpsBookingDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const bookings = useBookings();
   const vehicles = useVehicles();
   const drivers = useDrivers();
@@ -34,6 +36,9 @@ export function OpsBookingDetail() {
 
   const booking = bookings.find((b) => b.id === id);
   const client = booking ? clients.find((c) => c.id === booking.clientId) : undefined;
+  const origin = location.state as { returnTo?: string; returnLabel?: string; returnState?: unknown } | null;
+  const returnTo = origin?.returnTo?.startsWith("/ops/") ? origin.returnTo : undefined;
+  const returnLabel = returnTo ? origin?.returnLabel : undefined;
 
   // Same treatment as BookingDetail.tsx's own usePageHeader call — the top
   // header used to just fall back to the generic "FleetCo Platform" title
@@ -41,7 +46,10 @@ export function OpsBookingDetail() {
   // Rentals", matching the sidebar items' own real labels exactly, same
   // reasoning as that file's own comment on why it's the full name and not
   // a shortened one.
-  usePageHeader(booking?.id, booking ? (clientNavSection(booking.status) === "requests" ? "All Requests" : "All Rentals") : "");
+  usePageHeader(
+    booking?.id,
+    booking ? (returnLabel ?? (clientNavSection(booking) === "requests" ? "All Requests" : "All Rentals")) : "",
+  );
 
   // Same clientNavSection-derived destination as BookingDetail.tsx's own
   // handleBack, not raw navigate(-1) — real browser history can go stale
@@ -52,21 +60,24 @@ export function OpsBookingDetail() {
   // after it's since moved to Accepted/Assigned, and "-1" could land
   // anywhere, not necessarily the list it now actually belongs to.
   function handleBack() {
+    if (returnTo) {
+      navigate(returnTo, { state: origin?.returnState });
+      return;
+    }
     if (!booking) {
       navigate(-1);
       return;
     }
-    navigate(clientNavSection(booking.status) === "requests" ? "/ops/requests" : "/ops/rentals");
+    navigate(clientNavSection(booking) === "requests" ? "/ops/requests" : "/ops/rentals");
   }
 
   return (
     <div>
-      <button
+      <Button variant="ghost" size="icon" className="flex items-center gap-1.5 text-xs mb-4"
         onClick={handleBack}
-        className="flex items-center gap-1.5 text-xs font-medium text-slate-500 hover:text-slate-800 mb-4 cursor-pointer"
       >
-        <ArrowLeft size={14} /> Back
-      </button>
+        <ArrowLeft size={14} /> {returnLabel ? `Back to ${returnLabel}` : "Back"}
+      </Button>
 
       {booking ? (
         <OpsBookingDetailPanel

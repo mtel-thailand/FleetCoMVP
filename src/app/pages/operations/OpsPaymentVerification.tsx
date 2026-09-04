@@ -1,7 +1,9 @@
 import { useState } from "react";
-import { useNavigate, useParams } from "react-router";
+import { Button } from "@/app/components/ui/Button";
+import { useLocation, useNavigate, useParams } from "react-router";
 import { ArrowLeft, Ban, Check, FileQuestion, Hash, Paperclip, ReceiptText, ShieldCheck } from "lucide-react";
 import { TaxInvoiceDocument } from "@/app/components/documents/TaxInvoiceDetail";
+import { DocumentPreviewFrame } from "@/app/components/documents/DocumentWorkspace";
 import { ActionModal } from "@/app/components/ui/ActionModal";
 import { EmptyState } from "@/app/components/ui/EmptyState";
 import { ReasonForm } from "@/app/components/ui/ReasonForm";
@@ -14,10 +16,12 @@ import { updateInvoice, useInvoices } from "@/app/lib/invoicesStore";
 import { usePageHeader } from "@/app/lib/pageHeaderStore";
 import { buildTaxInvoiceRecord, nowStamp, verifyPaymentAndIssueTaxInvoice } from "@/app/lib/taxInvoiceIssuance";
 import { nextTaxInvoiceId, useTaxInvoices } from "@/app/lib/taxInvoicesStore";
+import { toastSuccess } from "@/app/lib/toast";
 
 export function OpsPaymentVerification() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const invoice = useInvoices().find((item) => item.id === id);
   const booking = useBookings().find((item) => item.id === invoice?.bookingId);
   const client = useClients().find((item) => item.id === invoice?.clientId);
@@ -28,6 +32,10 @@ export function OpsPaymentVerification() {
   const [showRejectPayment, setShowRejectPayment] = useState(false);
 
   usePageHeader(invoice ? "Verify Payment" : undefined, invoice?.id ?? "");
+
+  function returnToInvoice(invoiceId: string) {
+    navigate(`/ops/documents/invoices/${invoiceId}`, { replace: true, state: location.state });
+  }
 
   if (!invoice || !booking) {
     return (
@@ -46,7 +54,7 @@ export function OpsPaymentVerification() {
     return (
       <div>
         <button
-          onClick={() => navigate(`/ops/documents/invoices/${invoice.id}`)}
+          onClick={() => returnToInvoice(invoice.id)}
           className="mb-4 flex items-center gap-1.5 text-xs font-medium text-slate-500 hover:text-slate-800 cursor-pointer"
         >
           <ArrowLeft size={14} /> Back to Invoice
@@ -67,18 +75,20 @@ export function OpsPaymentVerification() {
 
   function handleVerifyPayment() {
     verifyPaymentAndIssueTaxInvoice({ invoice: invoice!, booking: booking!, client, docNumber });
-    navigate(`/ops/documents/invoices/${invoice!.id}`, { replace: true });
+    toastSuccess("Payment verified and tax invoice {id} issued.", { id: docNumber });
+    returnToInvoice(invoice!.id);
   }
 
   function handleRejectPayment(reason: string) {
     updateInvoice(invoice!.id, { status: "Payment Issue", paymentRejectionReason: reason, updated: nowStamp() });
-    navigate(`/ops/documents/invoices/${invoice!.id}`, { replace: true });
+    toastSuccess("Payment claim for {id} rejected.", { id: invoice!.id });
+    returnToInvoice(invoice!.id);
   }
 
   return (
     <div className="max-w-[1600px]">
       <button
-        onClick={() => navigate(`/ops/documents/invoices/${invoice.id}`)}
+        onClick={() => returnToInvoice(invoice.id)}
         className="mb-4 flex items-center gap-1.5 text-xs font-medium text-slate-500 hover:text-slate-800 cursor-pointer"
       >
         <ArrowLeft size={14} /> Back to Invoice
@@ -90,15 +100,19 @@ export function OpsPaymentVerification() {
             <h1 className="text-lg font-semibold text-slate-900">Review Payment</h1>
             <StatusBadge status={invoice.status} />
           </div>
-          <p className="mt-1 text-xs text-slate-500">{invoice.id} · Tax invoice {docNumber}</p>
+          <p className="mt-1 text-xs text-slate-500">{invoice.id} · Tax invoice preview</p>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
+      <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-[minmax(0,1fr)_400px]">
         <section className="min-w-0">
-          <div className="rounded-lg bg-slate-200 p-3 sm:p-6">
-            <TaxInvoiceDocument taxInvoice={taxInvoicePreview} />
-          </div>
+          <DocumentPreviewFrame
+            downloadFilename={`${docNumber}-tax-invoice.pdf`}
+            allowDownload={false}
+            className="rounded-lg p-3 sm:px-6 sm:pb-6 sm:pt-4"
+          >
+            <TaxInvoiceDocument taxInvoice={taxInvoicePreview} booking={booking} />
+          </DocumentPreviewFrame>
         </section>
 
         <aside className="space-y-4 xl:sticky xl:top-20">
@@ -161,10 +175,10 @@ export function OpsPaymentVerification() {
               <p className="mt-1 leading-relaxed">The invoice will be marked Paid and the tax invoice will become immutable. A verification record will be attached to the issued document.</p>
             </div>
             <div className="flex gap-2">
-              <button onClick={() => setShowConfirmation(false)} className="flex-1 rounded-lg border border-slate-200 py-2 text-xs text-slate-600 hover:bg-slate-50 cursor-pointer">Cancel</button>
-              <button onClick={handleVerifyPayment} className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-[var(--portal-accent)] py-2 text-xs font-medium text-white hover:bg-[var(--portal-accent-hover)] cursor-pointer">
+              <Button variant="outline" size="md" className="flex-1 px-0 py-2" onClick={() => setShowConfirmation(false)}>Cancel</Button>
+              <Button variant="primary" size="md" className="flex-1 px-0 py-2" onClick={handleVerifyPayment}>
                 <Check size={13} /> Verify and Issue
-              </button>
+              </Button>
             </div>
           </div>
         </ActionModal>

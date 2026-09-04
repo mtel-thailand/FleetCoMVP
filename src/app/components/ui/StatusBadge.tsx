@@ -16,7 +16,7 @@ export function StatusBadge({ status, variant }: { status: string; variant?: "es
     "Ready to use": "bg-green-100 text-green-700",
     Confirmed: "bg-emerald-100 text-emerald-700",
     Redeemed: "bg-blue-100 text-blue-700",
-    Expired: "bg-red-100 text-red-700",
+    Expired: "bg-red-100 text-red-800 border border-red-200",
     // Transportation
     Assigned: "bg-blue-100 text-blue-700",
     Cancelled: "bg-slate-100 text-slate-500",
@@ -55,6 +55,7 @@ export function StatusBadge({ status, variant }: { status: string; variant?: "es
     "Payment Submitted": "bg-indigo-100 text-indigo-700",
     Paid: "bg-green-100 text-green-700",
     Overdue: "bg-red-100 text-red-700",
+    "Tax Invoice Issued": "bg-violet-100 text-violet-700",
     // Orange, not red — a rejected claim isn't the same problem as a missed
     // deadline (Overdue), it's "you tried and it didn't go through," same
     // "attempted, went wrong" semantics as Rejected/In Maintenance/Out of
@@ -63,6 +64,7 @@ export function StatusBadge({ status, variant }: { status: string; variant?: "es
 
     // ── Vehicle status (data/vehicles.ts) — §4.2 ─────────────────────────
     Available: "bg-emerald-100 text-emerald-700",
+    Unavailable: "bg-slate-100 text-slate-500",
     Reserved: "bg-amber-100 text-amber-700",
     "On Rental": "bg-blue-100 text-blue-700",
     "In Maintenance": "bg-orange-100 text-orange-700",
@@ -79,6 +81,9 @@ export function StatusBadge({ status, variant }: { status: string; variant?: "es
     // ── Issue Report status (data/issueReports.ts) ───────────────────────
     Open: "bg-amber-100 text-amber-700",
     Resolved: "bg-emerald-100 text-emerald-700",
+
+    // ── Tax branch registry status (data/clients.ts OrgBranch) ───────────
+    Deactivated: "bg-slate-100 text-slate-500",
   };
 
   // eSIM variant: Inactive is blue instead of grey

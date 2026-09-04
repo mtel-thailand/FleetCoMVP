@@ -2,12 +2,12 @@ import { useState } from "react";
 import { useNavigate } from "react-router";
 import { useBookings } from "@/app/lib/bookingsStore";
 import { useQuotations } from "@/app/lib/quotationsStore";
-import { quotationTotals, type Quotation } from "@/app/data/quotations";
+import { quotationDisplayStatus, quotationTotals, type Quotation } from "@/app/data/quotations";
 import { useInvoices } from "@/app/lib/invoicesStore";
 import { useTaxInvoices } from "@/app/lib/taxInvoicesStore";
-import type { Invoice } from "@/app/data/invoices";
+import { invoiceDisplayStatus, type Invoice } from "@/app/data/invoices";
 import type { TaxInvoice } from "@/app/data/taxInvoices";
-import { bookingInvoices, bookingTaxInvoices, type Booking } from "@/app/data/bookings";
+import { bookingInvoices, bookingQuotations, bookingTaxInvoices, type Booking } from "@/app/data/bookings";
 import { FolderOpen, FileCheck2, Receipt, AlertCircle } from "lucide-react";
 import { StatusBadge } from "@/app/components/ui/StatusBadge";
 import { EmptyState } from "@/app/components/ui/EmptyState";
@@ -15,6 +15,7 @@ import { FilterBar } from "@/app/components/ui/FilterBar";
 import { formatDate } from "@/app/components/ui/utils";
 import { formatCurrency } from "@/app/data/formatters";
 import { CLIENT_ID } from "@/app/lib/currentClient";
+import { useOpenInvoice, useOpenQuotation, useOpenTaxInvoice } from "@/app/lib/documentNav";
 
 // brief §5.3: "Billing history: full document trail per booking and per
 // month." Read-only ledger — one row per *invoice cycle*, not per booking:
@@ -36,12 +37,12 @@ type LedgerRow = {
 // InvoiceInbox, so this reads as a summary of that screen rather than a
 // second, disconnected view.
 function MiniDash({
-  bookings, quotationById, invoices,
+  bookings, quotations, invoices,
 }: {
-  bookings: Booking[]; quotationById: Map<string, Quotation>; invoices: Invoice[];
+  bookings: Booking[]; quotations: Quotation[]; invoices: Invoice[];
 }) {
   const quotedTotal = bookings.reduce((sum, b) => {
-    const q = b.quotationId ? quotationById.get(b.quotationId) : undefined;
+    const q = bookingQuotations(b.id, quotations)[0];
     if (!q || q.status === "Declined") return sum;
     return sum + quotationTotals(q).grandTotal;
   }, 0);
@@ -78,13 +79,14 @@ function MiniDash({
 
 export function BillingHistory() {
   const navigate = useNavigate();
-  const bookings = useBookings().filter((b) => b.clientId === CLIENT_ID && b.quotationId);
+  const bookings = useBookings().filter((b) => b.clientId === CLIENT_ID);
   const quotations = useQuotations();
   const invoices = useInvoices();
   const taxInvoices = useTaxInvoices();
+  const openQuotation = useOpenQuotation();
+  const openInvoice = useOpenInvoice();
+  const openTaxInvoice = useOpenTaxInvoice();
   const [search, setSearch] = useState("");
-
-  const quotationById = new Map(quotations.map((q) => [q.id, q]));
 
   // Search only here, deliberately — no status filter or column sort. This
   // is a grouped ledger (one booking can own several rows, and every row
@@ -96,7 +98,8 @@ export function BillingHistory() {
   // matches shows up complete, every group that doesn't disappears whole.
   const query = search.trim().toLowerCase();
   const matchingBookings = bookings.filter(
-    (b) => !query || b.id.toLowerCase().includes(query) || b.pickupLocation.toLowerCase().includes(query),
+    (b) => bookingQuotations(b.id, quotations).length > 0 &&
+      (!query || b.id.toLowerCase().includes(query) || b.pickupLocation.toLowerCase().includes(query)),
   );
   const sortedBookings = matchingBookings.slice().sort((a, b) => (a.created < b.created ? 1 : -1));
 
@@ -105,7 +108,7 @@ export function BillingHistory() {
   // (recurring billing) gets N rows, oldest cycle first — reads as a running
   // history rather than newest-first like the rest of this app, since these
   // rows are grouped under one booking rather than independent list items.
-  const rows: LedgerRow[] = sortedBookings.flatMap((b) => {
+  const rows: LedgerRow[] = sortedBookings.flatMap((b): LedgerRow[] => {
     const bInvoices = bookingInvoices(b.id, invoices).slice().reverse();
     const bTaxInvoices = bookingTaxInvoices(b.id, taxInvoices);
     if (bInvoices.length === 0) {
@@ -124,7 +127,7 @@ export function BillingHistory() {
       {/* Driven by the full unfiltered bookings list, not rows — these are
           portfolio-level totals, not "totals for your current search", so
           they shouldn't fluctuate or disappear as you type. */}
-      {bookings.length > 0 && <MiniDash bookings={bookings} quotationById={quotationById} invoices={invoices} />}
+      {bookings.length > 0 && <MiniDash bookings={bookings} quotations={quotations} invoices={invoices} />}
       {bookings.length === 0 ? (
         <div className="bg-white rounded-xl border border-slate-200">
           <EmptyState
@@ -136,7 +139,7 @@ export function BillingHistory() {
         </div>
       ) : (
         <>
-          <FilterBar showPeriod={false} searchableFields={["Booking ID", "Branch Location"]} onSearch={setSearch} />
+          <FilterBar searchableFields={["Booking ID", "Delivery Site"]} onSearch={setSearch} />
           {rows.length === 0 ? (
             <div className="bg-white rounded-xl border border-slate-200">
               <div className="text-center py-12 text-slate-400 text-sm">No bookings match your search</div>
@@ -155,10 +158,12 @@ export function BillingHistory() {
                   <tbody>
                     {rows.map((row, i) => {
                       const { booking: b, invoice, taxInvoice, showBookingCells } = row;
-                      const quotation = b.quotationId ? quotationById.get(b.quotationId) : undefined;
+                      const quotation = bookingQuotations(b.id, quotations)[0];
                       const qTotal = quotation ? quotationTotals(quotation).grandTotal : null;
                       return (
-                        <tr key={`${b.id}-${invoice?.id ?? "none"}-${i}`} className="border-b border-slate-50 hover:bg-slate-50 cursor-pointer" onClick={() => navigate(`/portal/bookings/${b.id}`)}>
+                        <tr key={`${b.id}-${invoice?.id ?? "none"}-${i}`} className="border-b border-slate-50 hover:bg-slate-50 cursor-pointer" onClick={() => navigate(`/portal/bookings/${b.id}`, {
+                          state: { returnTo: "/portal/billing-history", returnLabel: "Billing History" },
+                        })}>
                           <td className="px-4 py-3 text-xs font-medium text-[var(--portal-accent)] whitespace-nowrap">{showBookingCells ? b.id : ""}</td>
                           <td className="px-4 py-3 text-xs text-slate-600 whitespace-nowrap">
                             {showBookingCells ? `${formatDate(b.startDate)} → ${formatDate(b.endDate)}` : ""}
@@ -167,8 +172,17 @@ export function BillingHistory() {
                             {showBookingCells ? (
                               quotation ? (
                                 <div className="flex items-center gap-2">
-                                  <span className="text-slate-700">{quotation.id}</span>
-                                  <StatusBadge status={quotation.status} />
+                                  <button
+                                    type="button"
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      openQuotation(quotation.id, b.id);
+                                    }}
+                                    className="text-slate-700 hover:text-[var(--portal-accent)] cursor-pointer"
+                                  >
+                                    {quotation.id}
+                                  </button>
+                                  <StatusBadge status={quotationDisplayStatus(quotation)} />
                                   <span className="text-slate-500">{qTotal !== null ? formatCurrency(qTotal) : ""}</span>
                                 </div>
                               ) : (
@@ -181,8 +195,17 @@ export function BillingHistory() {
                           <td className="px-4 py-3 text-xs whitespace-nowrap">
                             {invoice ? (
                               <div className="flex items-center gap-2">
-                                <span className="text-slate-700">{invoice.id}</span>
-                                <StatusBadge status={invoice.status} />
+                                <button
+                                  type="button"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    openInvoice(invoice.id, b.id);
+                                  }}
+                                  className="text-slate-700 hover:text-[var(--portal-accent)] cursor-pointer"
+                                >
+                                  {invoice.id}
+                                </button>
+                                <StatusBadge status={invoiceDisplayStatus(invoice)} />
                                 <span className="text-slate-500">{formatCurrency(invoice.amountDue)}</span>
                               </div>
                             ) : (
@@ -192,7 +215,16 @@ export function BillingHistory() {
                           <td className="px-4 py-3 text-xs whitespace-nowrap">
                             {taxInvoice ? (
                               <div className="flex items-center gap-2">
-                                <span className="text-slate-700">{taxInvoice.id}</span>
+                                <button
+                                  type="button"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    openTaxInvoice(taxInvoice.id, b.id);
+                                  }}
+                                  className="text-slate-700 hover:text-[var(--portal-accent)] cursor-pointer"
+                                >
+                                  {taxInvoice.id}
+                                </button>
                                 <span className="text-slate-500">{formatCurrency(taxInvoice.totalAmount)}</span>
                               </div>
                             ) : (

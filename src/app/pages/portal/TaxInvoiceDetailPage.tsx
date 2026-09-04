@@ -1,4 +1,5 @@
-import { useNavigate, useParams } from "react-router";
+import { useLocation, useNavigate, useParams } from "react-router";
+import { Button } from "@/app/components/ui/Button";
 import { ArrowLeft, FileQuestion } from "lucide-react";
 import { useTaxInvoices } from "@/app/lib/taxInvoicesStore";
 import { CLIENT_ID } from "@/app/lib/currentClient";
@@ -13,21 +14,45 @@ import { usePageHeader } from "@/app/lib/pageHeaderStore";
 export function TaxInvoiceDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const taxInvoices = useTaxInvoices();
 
   const taxInvoice = taxInvoices.find((t) => t.id === id && t.clientId === CLIENT_ID);
+  const routeState = location.state as {
+    fromBookingId?: string;
+    navPath?: string;
+    returnTo?: string;
+    returnLabel?: string;
+    returnState?: unknown;
+  } | null;
+  const returnTo = routeState?.returnTo?.startsWith("/portal/") ? routeState.returnTo : undefined;
+
+  function handleBack() {
+    if (returnTo) {
+      navigate(returnTo, { state: routeState?.returnState });
+      return;
+    }
+    if (routeState?.fromBookingId) {
+      navigate(`/portal/bookings/${routeState.fromBookingId}`, { state: routeState.returnState });
+      return;
+    }
+    if (routeState?.navPath?.startsWith("/portal/")) {
+      navigate(routeState.navPath);
+      return;
+    }
+    navigate("/portal/documents/invoices");
+  }
 
   // Same header pattern as QuotationDetailPage/InvoiceDetailPage.
   usePageHeader(taxInvoice ? "Tax Invoice" : undefined, taxInvoice?.bookingId ?? "");
 
   return (
     <div>
-      <button
-        onClick={() => navigate(-1)}
-        className="flex items-center gap-1.5 text-xs font-medium text-slate-500 hover:text-slate-800 mb-4 cursor-pointer"
+      <Button variant="ghost" size="icon" className="flex items-center gap-1.5 text-xs mb-4"
+        onClick={handleBack}
       >
-        <ArrowLeft size={14} /> Back
-      </button>
+        <ArrowLeft size={14} /> {returnTo && routeState?.returnLabel ? `Back to ${routeState.returnLabel}` : routeState?.fromBookingId ? "Back to Booking" : "Back to Invoices & Payments"}
+      </Button>
 
       {taxInvoice ? (
         <TaxInvoiceDetail taxInvoice={taxInvoice} />

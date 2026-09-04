@@ -1,8 +1,9 @@
 import { FileText, Receipt, FileCheck2, ChevronRight, type LucideIcon } from "lucide-react";
-import { quotationTotals, type Quotation } from "@/app/data/quotations";
+import { quotationDisplayStatus, quotationTotals, type Quotation } from "@/app/data/quotations";
 import type { Invoice } from "@/app/data/invoices";
 import type { TaxInvoice } from "@/app/data/taxInvoices";
 import { InvoiceStatusCell } from "./InvoiceProgress";
+import { StatusBadge } from "./StatusBadge";
 import { formatCurrency } from "@/app/data/formatters";
 import { formatDate } from "./utils";
 import { useOpenQuotation, useOpenInvoice } from "@/app/lib/documentNav";
@@ -98,19 +99,16 @@ export function DocumentChain({ quotations, invoices, taxInvoices, onOpenQuotati
     <div className="space-y-3">
       {quotations.length > 0 && (
         <DocGroup label="Quotation" icon={FileText}>
-          {/* No status indicator here, unlike Invoice below — a quotation's
-              Accepted/Declined state is already fully implied by the
-              booking's own status shown above this card (Accepted-or-later
-              means it was accepted, Declined means it was declined, Quoted
-              means it's still pending), since a booking only ever has one
-              quotation at a time (nothing in this app revises one into a
-              v2+). Invoice status isn't derivable the same way — billing
-              progress is tracked independently of rental status, see
-              bookings.ts — so that one keeps its own. Tax invoices never
-              had a status indicator here either way — see
-              TaxInvoiceDetail.tsx, immutable the moment one's issued. */}
           {quotations.map((q) => (
-            <DocRow key={q.id} id={q.id} version={q.version} date={q.issuedAt ?? q.created} amount={quotationTotals(q).grandTotal} onClick={() => (onOpenQuotation ? onOpenQuotation(q.id) : openQuotation(q.id, q.bookingId))} />
+            <DocRow
+              key={q.id}
+              id={q.id}
+              version={q.version}
+              date={q.issuedAt ?? q.created}
+              amount={quotationTotals(q).grandTotal}
+              statusSlot={<StatusBadge status={quotationDisplayStatus(q)} />}
+              onClick={() => (onOpenQuotation ? onOpenQuotation(q.id) : openQuotation(q.id, q.bookingId))}
+            />
           ))}
         </DocGroup>
       )}
@@ -118,7 +116,7 @@ export function DocumentChain({ quotations, invoices, taxInvoices, onOpenQuotati
         <DocGroup label="Invoice" icon={Receipt}>
           {invoices.length > 0 ? (
             invoices.map((i) => (
-              <DocRow key={i.id} id={i.id} date={i.issuedAt} amount={i.amountDue} statusSlot={<InvoiceStatusCell status={i.status} />} onClick={() => openInvoice(i.id, i.bookingId)} />
+              <DocRow key={i.id} id={i.id} date={i.issuedAt} amount={i.amountDue} statusSlot={<InvoiceStatusCell status={i.status} dueDate={i.dueDate} />} onClick={() => openInvoice(i.id, i.bookingId)} />
             ))
           ) : (
             <div className="bg-slate-50 rounded-lg px-3 py-2.5 text-xs text-slate-400">Waiting for FleetCo to issue an invoice.</div>

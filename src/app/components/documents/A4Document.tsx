@@ -1,3 +1,4 @@
+/** @jsxImportSource react */
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useElementWidth } from "@/app/hooks/useElementWidth";
 
@@ -147,7 +148,7 @@ export function A4Document({ docNumber, docTypeLabel, draft, head, columns, rows
           <PageSheet key={i} scale={scale} draft={draft} isLast={i === pages.length - 1} pageNum={i + 1} totalPages={pages.length}>
             {p.isFirst ? head : continuationHeader}
             {hasTable && p.end > p.start && (
-              <table className="mt-4 w-full border-collapse text-[11px]">
+              <table className="mt-4 w-full table-fixed border-collapse text-[11px]">
                 <thead className="print:table-header-group">{columns}</thead>
                 <tbody>{rows.slice(p.start, p.end)}</tbody>
               </table>
@@ -168,7 +169,7 @@ export function A4Document({ docNumber, docTypeLabel, draft, head, columns, rows
         <div ref={headRef}>{head}</div>
         <div ref={contRef}>{continuationHeader}</div>
         {hasTable && (
-          <table className="mt-4 w-full border-collapse text-[11px]">
+          <table className="mt-4 w-full table-fixed border-collapse text-[11px]">
             <thead ref={theadRef}>{columns}</thead>
             <tbody ref={rowProbeRef}>{rows[0]}</tbody>
           </table>
@@ -201,11 +202,6 @@ function PageSheet({
         zoom: scale,
       }}
     >
-      {draft && (
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10" style={{ transform: "rotate(-25deg)" }}>
-          <span className="text-6xl font-bold text-slate-100 tracking-widest">DRAFT</span>
-        </div>
-      )}
       <div className="flex h-full flex-col overflow-hidden text-[12px] text-slate-800">
         {children}
       </div>

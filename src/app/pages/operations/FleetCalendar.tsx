@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { useNavigate } from "react-router";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useBookings } from "@/app/lib/bookingsStore";
 import { useVehicles } from "@/app/lib/vehiclesStore";
@@ -7,6 +6,8 @@ import type { VehicleClass } from "@/app/data/vehicles";
 import { fleetCoRentalStatusLabel, type Booking } from "@/app/data/bookings";
 import type { BookingStatus } from "@/app/data/bookingStatus";
 import { FilterDropdown } from "@/app/components/ui/FilterDropdown";
+import { formatUiDate } from "@/app/i18n";
+import { useOpenBookingFromContext } from "@/app/lib/documentNav";
 
 // brief §4.4: "Fleet calendar / Gantt view: every vehicle as a row, rentals
 // as bars across time — the core planning surface for multi-week and
@@ -47,11 +48,10 @@ function daysBetween(a: Date, dateStr: string): number {
   return Math.round((b.getTime() - a.getTime()) / 86400000);
 }
 
-const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const WEEKDAY = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
 
 export function FleetCalendar() {
-  const navigate = useNavigate();
+  const openBookingFromContext = useOpenBookingFromContext();
   const bookings = useBookings();
   const vehicles = useVehicles();
   const [classFilter, setClassFilter] = useState("");
@@ -86,10 +86,10 @@ export function FleetCalendar() {
   }
 
   function openBooking(id: string) {
-    navigate(`/ops/bookings/${id}`);
+    openBookingFromContext(id, { returnLabel: "Fleet Calendar", navPath: "/ops/calendar" });
   }
 
-  const rangeLabel = `${MONTH_NAMES[days[0].getMonth()]} ${days[0].getDate()} – ${MONTH_NAMES[days[WINDOW_DAYS - 1].getMonth()]} ${days[WINDOW_DAYS - 1].getDate()}, ${days[WINDOW_DAYS - 1].getFullYear()}`;
+  const rangeLabel = `${formatUiDate(toDateOnly(days[0]), false)} – ${formatUiDate(toDateOnly(days[WINDOW_DAYS - 1]), false)}`;
 
   return (
     <div>
@@ -203,7 +203,7 @@ export function FleetCalendar() {
                           className={`absolute top-1/2 -translate-y-1/2 h-6 rounded-md ${BAR_COLOR[b.status]} text-white text-[10px] font-medium flex items-center px-1.5 overflow-hidden hover:opacity-90 cursor-pointer transition-opacity`}
                           style={{ left, width: Math.max(width - 2, 4) }}
                         >
-                          <span className="truncate">{b.id.replace("BK-2026-", "#")}</span>
+                          <span className="truncate">{b.id.replace(/^BK-\d{4}-/, "#")}</span>
                         </button>
                       );
                     })}

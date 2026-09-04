@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router";
 import { Truck as TruckIcon, FilePlus2 } from "lucide-react";
 import { usePersistentListState } from "@/app/hooks/usePersistentListState";
-import { clientBookingStatusLabel, clientRentalStatusLabel, RENTAL_STATUSES, type Booking } from "@/app/data/bookings";
+import { clientBookingStatusLabel, clientRentalStatusLabel, isRentalBooking, type Booking } from "@/app/data/bookings";
 import { StatusBadge } from "@/app/components/ui/StatusBadge";
 import { EmptyState } from "@/app/components/ui/EmptyState";
 import { FilterBar } from "@/app/components/ui/FilterBar";
@@ -31,7 +31,7 @@ const RENTAL_TYPES = ["Ad hoc / Daily", "Short term", "Medium term", "Long term"
 // in an order the client has no way to predict (nothing on this page shows
 // the Accepted/Assigned distinction). Sorting on the label instead means the
 // grouping sorted on is exactly the grouping shown.
-const RENTAL_LABEL_PRIORITY = ["Upcoming", "Active", "Completed"];
+const RENTAL_LABEL_PRIORITY = ["Upcoming", "Active", "Completed", "Cancelled"];
 
 type SortKey = "startDate" | "status";
 type SortDir = "asc" | "desc";
@@ -53,13 +53,14 @@ function RentalsTable({
             table-fixed + colgroup, same as RequestInbox.tsx on the FleetCo
             side — sticky positioning on the Status column needs fixed,
             predictable column widths to stay lined up while scrolling. */}
-        <table className="w-full table-fixed text-sm" style={{ minWidth: "930px" }}>
+        <table className="w-full table-fixed text-sm" style={{ minWidth: "960px" }}>
           <colgroup>
             <col style={{ width: "110px" }} />
             <col style={{ width: "100px" }} />
             <col style={{ width: "120px" }} />
             <col style={{ width: "60px" }} />
-            <col style={{ width: "190px" }} />
+            <col style={{ width: "110px" }} />
+            <col style={{ width: "110px" }} />
             <col style={{ width: "240px" }} />
             <col style={{ width: "110px" }} />
           </colgroup>
@@ -76,9 +77,10 @@ function RentalsTable({
                 className="text-left text-xs font-medium text-slate-400 px-4 py-2.5 whitespace-nowrap cursor-pointer select-none hover:text-slate-600"
                 onClick={() => onSort("startDate")}
               >
-                <span className="inline-flex items-center gap-1">Rental Period<SortIndicator active={sortKey === "startDate"} direction={sortDir} /></span>
+                <span className="inline-flex items-center gap-1">Start Date<SortIndicator active={sortKey === "startDate"} direction={sortDir} /></span>
               </th>
-              <th className="text-left text-xs font-medium text-slate-400 px-4 py-2.5 whitespace-nowrap">Branch Location</th>
+              <th className="text-left text-xs font-medium text-slate-400 px-4 py-2.5 whitespace-nowrap">End Date</th>
+              <th className="text-left text-xs font-medium text-slate-400 px-4 py-2.5 whitespace-nowrap">Delivery Site</th>
               <th
                 className="sticky right-0 bg-slate-50 border-l border-slate-100 z-10 text-left text-xs font-medium text-slate-400 px-4 py-2.5 whitespace-nowrap cursor-pointer select-none hover:text-slate-600"
                 onClick={() => onSort("status")}
@@ -90,16 +92,15 @@ function RentalsTable({
           <tbody>
             {bookings.map((booking) => {
               return (
-                <tr key={booking.id} className="border-b border-slate-50 hover:bg-slate-50 cursor-pointer" onClick={() => onOpen(booking.id)}>
+                <tr key={booking.id} className="border-b border-slate-50 group hover:bg-slate-50 cursor-pointer" onClick={() => onOpen(booking.id)}>
                   <td className="px-4 py-3 text-xs font-medium text-[var(--portal-accent)] whitespace-nowrap">{booking.id}</td>
                   <td className="px-4 py-3 text-xs text-slate-600 whitespace-nowrap">{booking.rentalType}</td>
                   <td className="px-4 py-3 text-xs text-slate-600 whitespace-nowrap">{booking.vehicleClassRequested}</td>
                   <td className="px-4 py-3 text-xs text-slate-600 whitespace-nowrap">{booking.quantity}</td>
-                  <td className="px-4 py-3 text-xs text-slate-600 whitespace-nowrap">
-                    {formatDate(booking.startDate)} → {formatDate(booking.endDate)}
-                  </td>
+                  <td className="px-4 py-3 text-xs text-slate-600 whitespace-nowrap">{formatDate(booking.startDate)}</td>
+                  <td className="px-4 py-3 text-xs text-slate-600 whitespace-nowrap">{formatDate(booking.endDate)}</td>
                   <td className="px-4 py-3 text-xs text-slate-600 truncate">{booking.pickupLocation}</td>
-                  <td className="sticky right-0 bg-white border-l border-slate-100 px-4 py-3 whitespace-nowrap">
+                  <td className="sticky right-0 bg-white group-hover:bg-slate-50 border-l border-slate-100 px-4 py-3 whitespace-nowrap">
                     <StatusBadge status={clientBookingStatusLabel(booking)} />
                   </td>
                 </tr>
@@ -124,7 +125,7 @@ export function MyRentals() {
   const [search, setSearch] = usePersistentListState("myRentals.search", "");
   const [statusFilter, setStatusFilter] = usePersistentListState("myRentals.tab", "");
   const [typeFilter, setTypeFilter] = usePersistentListState("myRentals.type", "");
-  // Status ascending is the default now, not Rental Period — with no tabs
+  // Status ascending is the default now, not Start Date — with no tabs
   // left to put "what's current" ahead of "what's done," the sort itself has
   // to do that job: RENTAL_LABEL_PRIORITY's own order already puts Upcoming
   // before Active before Completed, so ascending naturally reads top-to-
@@ -135,11 +136,11 @@ export function MyRentals() {
   // landing it in Upcoming) surfaces at the top of that group immediately,
   // which is the more useful "did my action register" signal than where its
   // rental date happens to fall. Calendar order is still one click away —
-  // it's exactly what clicking the Rental Period header gives you.
+  // it's exactly what clicking the Start Date header gives you.
   const [sortKey, setSortKey] = usePersistentListState<SortKey>("myRentals.sortKey", "status");
   const [sortDir, setSortDir] = usePersistentListState<SortDir>("myRentals.sortDir", "asc");
 
-  const clientBookings = allBookings.filter((b) => b.clientId === CLIENT_ID && RENTAL_STATUSES.includes(b.status));
+  const clientBookings = allBookings.filter((b) => b.clientId === CLIENT_ID && isRentalBooking(b));
 
   // Counts driven by the full client-scoped set, not the search/type-filtered
   // view — same "don't make the number fluctuate while someone's mid-search"
@@ -151,6 +152,7 @@ export function MyRentals() {
     { value: "Upcoming", label: "Upcoming", count: clientBookings.filter((b) => clientRentalStatusLabel(b.status) === "Upcoming").length },
     { value: "Active", label: "Active", count: clientBookings.filter((b) => clientRentalStatusLabel(b.status) === "Active").length },
     { value: "Completed", label: "Completed", count: clientBookings.filter((b) => clientRentalStatusLabel(b.status) === "Completed").length },
+    { value: "Cancelled", label: "Cancelled", count: clientBookings.filter((b) => clientRentalStatusLabel(b.status) === "Cancelled").length },
   ];
 
   function handleSort(key: SortKey) {
@@ -209,8 +211,7 @@ export function MyRentals() {
         <>
           <FilterTabs options={tabOptions} value={statusFilter} onChange={setStatusFilter} />
           <FilterBar
-            showPeriod={false}
-            searchableFields={["ID", "Branch Location"]}
+            searchableFields={["ID", "Delivery Site"]}
             onSearch={setSearch}
             defaultSearch={search}
             trailing={newRequestButton}

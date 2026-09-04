@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { Receipt, Wallet } from "lucide-react";
+import { useTableState } from "@/app/hooks/useTableState";
+import { FileCheck2, Wallet } from "lucide-react";
 import { useTaxInvoices } from "@/app/lib/taxInvoicesStore";
 import { useOpenTaxInvoice } from "@/app/lib/documentNav";
 import { useClients } from "@/app/lib/clientsStore";
@@ -34,7 +35,7 @@ function MiniDash({ taxInvoices }: { taxInvoices: TaxInvoice[] }) {
     <div className="grid grid-cols-2 gap-3 mb-4 max-w-md">
       <div className="bg-white border border-slate-200 rounded-xl p-4 flex items-center gap-3">
         <div className="w-9 h-9 rounded-lg bg-violet-50 flex items-center justify-center shrink-0">
-          <Receipt size={16} className="text-violet-600" />
+          <FileCheck2 size={16} className="text-violet-600" />
         </div>
         <div>
           <p className="text-xs text-slate-500">Total Tax Invoices</p>
@@ -60,17 +61,13 @@ export function OpsTaxInvoices() {
   const clients = useClients();
   const clientById = new Map(clients.map((c) => [c.id, c]));
 
-  const [search, setSearch] = useState("");
-  const [clientFilter, setClientFilter] = useState("");
-  const [page, setPage] = useState(1);
-  const [sortKey, setSortKey] = useState<SortKey>("issuedAt");
-  const [sortDir, setSortDir] = useState<SortDir>("desc");
-
-  function handleSort(key: SortKey) {
-    if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-    else { setSortKey(key); setSortDir("desc"); }
-    setPage(1);
-  }
+  const { filters, setFilter, sortKey, sortDir, toggleSort, page, setPage } =
+    useTableState<{ search: string; client: string }, SortKey>({
+      storageKey: "opsTaxInvoices",
+      filters: { search: "", client: "" },
+      sort: { key: "issuedAt", dir: "desc" },
+    });
+  const { search, client: clientFilter } = filters;
 
   const filtered = taxInvoices.filter((t) => {
     const client = clientById.get(t.clientId);
@@ -98,9 +95,10 @@ export function OpsTaxInvoices() {
         exportDisabled={sorted.length === 0}
         onExportCSV={() => exportCSV(TI_HEADERS, sorted.map((t) => taxCSVRow(t, clientById.get(t.clientId)?.name ?? t.clientId)), `tax-invoices-${exportDateTag()}.csv`)}
         onExportXLSX={() => exportXLSX(TI_HEADERS, sorted.map((t) => taxXLSXRow(t, clientById.get(t.clientId)?.name ?? t.clientId)), `tax-invoices-${exportDateTag()}.xlsx`)}
-        onSearch={(v) => { setSearch(v); setPage(1); }}
+        onSearch={(v) => setFilter("search", v)}
+        defaultSearch={search}
         extraFilters={
-          <FilterDropdown value={clientFilter} onChange={(v) => { setClientFilter(v); setPage(1); }} placeholder="All Clients"
+          <FilterDropdown value={clientFilter} onChange={(v) => setFilter("client", v)} placeholder="All Clients"
             options={[{ label: "All Clients", value: "" }, ...clients.map((c) => ({ label: c.name, value: c.id }))]} />
         }
       />
@@ -120,10 +118,10 @@ export function OpsTaxInvoices() {
                 <th className="text-left text-xs font-medium text-slate-400 px-4 py-2.5 whitespace-nowrap">Tax Invoice ID</th>
                 <th className="text-left text-xs font-medium text-slate-400 px-4 py-2.5 whitespace-nowrap">Client</th>
                 <th className="text-left text-xs font-medium text-slate-400 px-4 py-2.5 whitespace-nowrap">Booking</th>
-                <th className="text-left text-xs font-medium text-slate-400 px-4 py-2.5 whitespace-nowrap cursor-pointer select-none hover:text-slate-600" onClick={() => handleSort("total")}>
+                <th className="text-left text-xs font-medium text-slate-400 px-4 py-2.5 whitespace-nowrap cursor-pointer select-none hover:text-slate-600" onClick={() => toggleSort("total")}>
                   <span className="inline-flex items-center gap-1">Total Amount<SortIndicator active={sortKey === "total"} direction={sortDir} /></span>
                 </th>
-                <th className="text-left text-xs font-medium text-slate-400 px-4 py-2.5 whitespace-nowrap cursor-pointer select-none hover:text-slate-600" onClick={() => handleSort("issuedAt")}>
+                <th className="text-left text-xs font-medium text-slate-400 px-4 py-2.5 whitespace-nowrap cursor-pointer select-none hover:text-slate-600" onClick={() => toggleSort("issuedAt")}>
                   <span className="inline-flex items-center gap-1">Issued<SortIndicator active={sortKey === "issuedAt"} direction={sortDir} /></span>
                 </th>
               </tr>

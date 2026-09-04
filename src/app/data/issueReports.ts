@@ -15,6 +15,7 @@
 // mock data below are untouched — flip this back to re-enable everywhere
 // at once. Same "flag, don't delete" convention as
 // ClientBookingDetail.tsx's own SHOW_BOOKING_UTILITY_ACTIONS.
+import { rebaseDemoDates } from "./demoDates";
 export const SHOW_ISSUE_REPORTS = false;
 
 export type IssueCategory = "Vehicle" | "Driver" | "Schedule" | "Billing" | "Other";
@@ -33,7 +34,7 @@ export type IssueReport = {
   resolvedAt?: string;
 };
 
-export const mockIssueReports: IssueReport[] = [
+export const mockIssueReports: IssueReport[] = rebaseDemoDates<IssueReport[]>([
   {
     id: "ISS-2026-0001",
     bookingId: "BK-2026-0004",
@@ -56,4 +57,4 @@ export const mockIssueReports: IssueReport[] = [
     resolutionNotes: "Spoke with the driver — a genuine traffic incident on Vibhavadi Rd. Dispatch will text clients ahead next time there's a delay.",
     resolvedAt: "2026-07-30 11:00",
   },
-];
+]);

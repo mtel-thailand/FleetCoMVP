@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { Modal, ModalTitle } from "@/app/components/ui/Modal";
+import { Button } from "@/app/components/ui/Button";
 import { X, Landmark, TrendingUp, AlertTriangle, DollarSign, CheckCircle2 } from "lucide-react";
 import type { FinancingRecord } from "@/app/data/financing";
 import { useFinancingRecords, updateFinancingRecord } from "@/app/lib/financingStore";
@@ -7,7 +9,9 @@ import { StatusBadge } from "@/app/components/ui/StatusBadge";
 import { SortIndicator } from "@/app/components/ui/SortIndicator";
 import { formatDate, sortByStatus } from "@/app/components/ui/utils";
 import { formatCurrency } from "@/app/data/formatters";
-import { useBodyScrollLock } from "@/app/hooks/useBodyScrollLock";
+import { formatUiMonthYear, translate } from "@/app/i18n";
+import { toastSuccess } from "@/app/lib/toast";
+import { demoNowStamp } from "@/app/data/demoDates";
 
 // brief §7.4: "Two key surfaces: (a) the portfolio table with dense
 // financial columns and status colors, (b) the per-vehicle financing detail
@@ -17,15 +21,15 @@ import { useBodyScrollLock } from "@/app/hooks/useBodyScrollLock";
 const COVERAGE_PRIORITY = ["Not Covered", "At Risk", "Covered"];
 
 function nowStamp() {
-  return new Date().toISOString().slice(0, 16).replace("T", " ");
+  return demoNowStamp();
 }
 
 function monthsFromNow(n: number | null): string {
-  if (n === null) return "Not on track";
-  if (n <= 0) return "Paid off";
+  if (n === null) return translate("Not on track");
+  if (n <= 0) return translate("Paid off");
   const d = new Date();
   d.setMonth(d.getMonth() + n);
-  return `${n} month${n === 1 ? "" : "s"} (~${d.toLocaleDateString("en-GB", { month: "short", year: "numeric" })})`;
+  return translate("{count} months (~{date})", { count: n, date: formatUiMonthYear(d) });
 }
 
 function Section({ title, rows }: { title: string; rows: [string, string][] }) {
@@ -57,7 +61,6 @@ function ProgressBar({ pct, tone }: { pct: number; tone: "blue" | "emerald" | "a
 // ── Financing detail panel ──────────────────────────────────────────────────
 
 function FinancingDetailPanel({ record, onClose }: { record: FinancingRecord; onClose: () => void }) {
-  useBodyScrollLock();
   const vehicles = useVehicles();
   const vehicle = vehicles.find((v) => v.id === record.vehicleId);
   const [confirmSettle, setConfirmSettle] = useState(false);
@@ -76,17 +79,17 @@ function FinancingDetailPanel({ record, onClose }: { record: FinancingRecord; on
       updated: nowStamp(),
     });
     setConfirmSettle(false);
+    toastSuccess("Financing record {id} settled.", { id: record.id });
   }
 
   return (
-    <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={onClose}>
-      <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-xl shadow-xl max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+    <Modal onClose={onClose} overlayClassName="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4" contentClassName="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-xl shadow-xl max-h-[90vh] flex flex-col">
         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 shrink-0">
           <div>
-            <h3 className="text-sm font-semibold text-slate-900">{vehicle ? `${vehicle.plateNumber} · ${vehicle.brand} ${vehicle.model}` : record.vehicleId}</h3>
+            <ModalTitle asChild><h3 className="text-sm font-semibold text-slate-900">{vehicle ? `${vehicle.plateNumber} · ${vehicle.brand} ${vehicle.model}` : record.vehicleId}</h3></ModalTitle>
             <p className="text-xs text-slate-500">{record.lender} · {record.contractNumber}</p>
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 cursor-pointer"><X size={18} /></button>
+          <Button variant="close" size="icon" onClick={onClose}><X size={18} /></Button>
         </div>
 
         <div className="flex-1 overflow-y-auto p-5 space-y-5">
@@ -208,8 +211,8 @@ function FinancingDetailPanel({ record, onClose }: { record: FinancingRecord; on
                     Record early settlement of {formatCurrency(record.outstandingPrincipal)}? This marks the loan fully paid off.
                   </p>
                   <div className="flex gap-2">
-                    <button onClick={() => setConfirmSettle(false)} className="flex-1 py-2 border border-slate-200 rounded-lg text-xs text-slate-600 hover:bg-white cursor-pointer">Cancel</button>
-                    <button onClick={handleSettle} className="flex-1 py-2 bg-[var(--portal-accent)] text-white rounded-lg text-xs hover:bg-[var(--portal-accent-hover)] cursor-pointer">Confirm Settlement</button>
+                    <Button variant="outline" size="md" className="flex-1 px-0 py-2" onClick={() => setConfirmSettle(false)}>Cancel</Button>
+                    <Button variant="primary" size="md" className="flex-1 px-0 py-2" onClick={handleSettle}>Confirm Settlement</Button>
                   </div>
                 </div>
               ) : (
@@ -220,8 +223,7 @@ function FinancingDetailPanel({ record, onClose }: { record: FinancingRecord; on
             </div>
           )}
         </div>
-      </div>
-    </div>
+      </Modal>
   );
 }
 

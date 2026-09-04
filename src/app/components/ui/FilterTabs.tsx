@@ -21,7 +21,7 @@ export function FilterTabs({
   onChange: (value: string) => void;
 }) {
   return (
-    <div className="flex items-center gap-1 border-b border-slate-200 mb-4">
+    <div className="flex max-w-full items-center gap-1 overflow-x-auto border-b border-slate-200 mb-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       {options.map((opt) => {
         const active = opt.value === value;
         return (
@@ -29,7 +29,7 @@ export function FilterTabs({
             key={opt.value || opt.label}
             type="button"
             onClick={() => onChange(opt.value)}
-            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap cursor-pointer ${
+            className={`flex items-center gap-2 px-3 sm:px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap cursor-pointer ${
               active ? "border-[var(--portal-accent)] text-[var(--portal-accent)]" : "border-transparent text-slate-500 hover:text-slate-800"
             }`}
           >

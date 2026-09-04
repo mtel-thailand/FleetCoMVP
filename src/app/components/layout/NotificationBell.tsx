@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { Bell, Check } from "lucide-react";
-import { Link, useNavigate } from "react-router";
+import { useNavigate } from "react-router";
 import { NOTIFICATION_EVENT_TYPES } from "@/app/data/notifications";
 import { useNotifications, markAllRead, markNotificationRead } from "@/app/lib/notificationsStore";
 import { formatDate } from "@/app/components/ui/utils";
+import { translate } from "@/app/i18n";
 
 // Brief §8: "in-app notification center + email for every step of the
 // commercial chain." Backed by notificationsStore.ts now, not a static
@@ -21,7 +22,7 @@ export function NotificationBell({ portal }: { portal: "fleetco" | "client" }) {
   const all = useNotifications();
 
   const scoped = all
-    .filter((n) => n.portal === portal)
+    .filter((n) => n.portal === portal && n.channels.includes("in_app"))
     .slice()
     .sort((a, b) => (a.sentAt < b.sentAt ? 1 : -1));
   const unread = scoped.filter((n) => !n.read).length;
@@ -36,7 +37,7 @@ export function NotificationBell({ portal }: { portal: "fleetco" | "client" }) {
   }, []);
 
   function eventLabel(id: string) {
-    return NOTIFICATION_EVENT_TYPES.find((e) => e.id === id)?.label ?? id;
+    return translate(NOTIFICATION_EVENT_TYPES.find((e) => e.id === id)?.label ?? id);
   }
 
   function openNotification(n: (typeof scoped)[number]) {
@@ -50,7 +51,11 @@ export function NotificationBell({ portal }: { portal: "fleetco" | "client" }) {
       <button
         onClick={() => setOpen((o) => !o)}
         className="relative text-slate-500 hover:text-slate-700 transition-colors cursor-pointer"
-        title="Notifications"
+        title={translate("Notifications")}
+        aria-label={unread > 0 ? translate("Notifications ({count} unread)", { count: unread }) : translate("Notifications")}
+        aria-expanded={open}
+        aria-haspopup="menu"
+        aria-controls="notification-menu"
       >
         <Bell size={19} />
         {unread > 0 && (
@@ -61,25 +66,26 @@ export function NotificationBell({ portal }: { portal: "fleetco" | "client" }) {
       </button>
 
       {open && (
-        <div className="absolute right-0 mt-2 w-80 bg-white border border-slate-200 rounded-xl shadow-lg z-50 overflow-hidden">
+        <div id="notification-menu" role="menu" className="absolute right-0 mt-2 w-80 bg-white border border-slate-200 rounded-xl shadow-lg z-50 overflow-hidden">
           <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
-            <span className="text-sm font-semibold text-slate-900">Notifications</span>
+            <span className="text-sm font-semibold text-slate-900">{translate("Notifications")}</span>
             {unread > 0 && (
               <button
                 onClick={() => markAllRead(portal)}
                 className="flex items-center gap-1 text-xs text-[var(--portal-accent)] hover:text-[var(--portal-accent-hover)] cursor-pointer"
               >
-                <Check size={12} /> Mark all read
+                <Check size={12} /> {translate("Mark all as read")}
               </button>
             )}
           </div>
           <div className="max-h-96 overflow-y-auto divide-y divide-slate-50">
             {recent.length === 0 ? (
-              <p className="px-4 py-6 text-xs text-slate-400 text-center">Nothing yet.</p>
+              <p className="px-4 py-6 text-xs text-slate-400 text-center">{translate("No notifications")}</p>
             ) : (
               recent.map((n) => (
                 <button
                   key={n.id}
+                  role="menuitem"
                   onClick={() => openNotification(n)}
                   className={`w-full text-left px-4 py-3 hover:bg-slate-50 cursor-pointer transition-colors ${!n.read ? "bg-[var(--portal-accent-light)]/40" : ""}`}
                 >
@@ -95,15 +101,6 @@ export function NotificationBell({ portal }: { portal: "fleetco" | "client" }) {
               ))
             )}
           </div>
-          {portal === "fleetco" && (
-            <Link
-              to="/ops/admin/notifications"
-              onClick={() => setOpen(false)}
-              className="block text-center px-4 py-2.5 text-xs font-medium text-[var(--portal-accent)] hover:bg-slate-50 border-t border-slate-100"
-            >
-              View all notifications
-            </Link>
-          )}
         </div>
       )}
     </div>

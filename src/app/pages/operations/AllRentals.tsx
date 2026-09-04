@@ -1,16 +1,16 @@
 import { useState } from "react";
 import { useNavigate } from "react-router";
-import { fleetCoBookingStatusLabel, RENTAL_STATUSES, type Booking } from "@/app/data/bookings";
+import { fleetCoBookingStatusLabel, isRentalBooking, type Booking } from "@/app/data/bookings";
 import type { ClientAccount } from "@/app/data/clients";
 import { BOOKING_STATUS_PRIORITY } from "@/app/data/bookingStatus";
-import { usePersistentListState } from "@/app/hooks/usePersistentListState";
+import { useTableState } from "@/app/hooks/useTableState";
 import { FilterBar } from "@/app/components/ui/FilterBar";
 import { FilterDropdown } from "@/app/components/ui/FilterDropdown";
 import { FilterTabs } from "@/app/components/ui/FilterTabs";
 import { StatusBadge } from "@/app/components/ui/StatusBadge";
 import { SortIndicator } from "@/app/components/ui/SortIndicator";
 import { TablePagination, PAGE_SIZE } from "@/app/components/ui/TablePagination";
-import { formatDate, sortByStatusWithDate, sortByDatetime } from "@/app/components/ui/utils";
+import { formatDate, localDateKey, sortByStatusWithDate, sortByDatetime } from "@/app/components/ui/utils";
 import { exportCSV, exportXLSX, parseExcelDate, exportDateTag } from "@/app/components/ui/exportUtils";
 import { useBookings } from "@/app/lib/bookingsStore";
 import { useClients } from "@/app/lib/clientsStore";
@@ -28,23 +28,23 @@ const RENTAL_TYPES = ["Ad hoc / Daily", "Short term", "Medium term", "Long term"
 
 type SortKey = "status" | "startDate" | "created" | "updated";
 type SortDir = "asc" | "desc";
-type RentalView = "all" | "action" | "upcoming" | "active" | "completed";
+type RentalView = "all" | "action" | "upcoming" | "active" | "completed" | "cancelled";
 
-// Action Required is deliberately narrow: only accepted rentals still
-// waiting for FleetCo to assign a vehicle and driver. Starting/completing
-// remain available from their normal Scheduled/Active views, while billing
-// work belongs to Invoices.
-function matchesRentalView(booking: Booking, view: RentalView) {
+// Action Required is limited to accepted rentals awaiting vehicle/driver
+// assignment. Starting/completing remain manual actions; date-driven
+// reminders are surfaced in the dashboard and booking detail instead.
+function matchesRentalView(booking: Booking, view: RentalView, today: string) {
   if (view === "action") return needsFleetCoRentalAction(booking);
   if (view === "upcoming") return booking.status === "Assigned";
   if (view === "active") return booking.status === "Active";
   if (view === "completed") return booking.status === "Completed";
+  if (view === "cancelled") return booking.status === "Cancelled";
   return true;
 }
 
 const BK_HEADERS = [
   "ID", "Client", "Rental Type", "Vehicle Class", "Quantity",
-  "Start Date", "End Date", "Branch Location", "Status",
+  "Start Date", "End Date", "Delivery Site", "Status",
 ];
 
 function bkCSVRow(b: Booking, clientById: Map<string, ClientAccount>): string[] {
@@ -67,40 +67,33 @@ export function AllRentals() {
   const navigate = useNavigate();
   const allBookings = useBookings();
   const clientById = new Map(useClients().map((c) => [c.id, c]));
+  const today = localDateKey();
   // Persisted — same reasoning as AllRequests.tsx: this page unmounts on
   // every row click into /ops/bookings/:id, and Back used to silently
   // reset the tab/search/filter/sort each time.
-  const [search, setSearch] = usePersistentListState("opsRentals.search", "");
-  // Defaults to the first tab (Action Required), not All — same
+  // view defaults to the first tab (Action Required), not All — same
   // convention AllRequests.tsx and MyRequests.tsx already use, so landing
   // on this page opens straight onto what actually needs attention rather
   // than the full, undifferentiated list.
-  const [view, setView] = usePersistentListState<RentalView>("opsRentals.view", "action");
-  const [typeFilter, setTypeFilter] = usePersistentListState("opsRentals.type", "");
-  const [sortKey, setSortKey] = usePersistentListState<SortKey>("opsRentals.sortKey", "created");
-  const [sortDir, setSortDir] = usePersistentListState<SortDir>("opsRentals.sortDir", "desc");
-  // Not persisted — see AllRequests.tsx's matching comment.
-  const [page, setPage] = useState(1);
+  const { filters, setFilter, sortKey, sortDir, toggleSort, page, setPage } =
+    useTableState<{ search: string; view: RentalView; type: string }, SortKey>({
+      storageKey: "opsRentals",
+      filters: { search: "", view: "action", type: "" },
+      sort: { key: "created", dir: "desc" },
+      defaultDirFor: (key) => (key === "status" ? "asc" : "desc"),
+    });
+  const { search, view, type: typeFilter } = filters;
 
-  const rows = allBookings.filter((b) => RENTAL_STATUSES.includes(b.status));
+  const rows = allBookings.filter((b) => isRentalBooking(b));
 
   const tabOptions = [
-    { value: "action", label: "Action Required", count: rows.filter((b) => matchesRentalView(b, "action")).length, highlight: true },
-    { value: "upcoming", label: "Scheduled", count: rows.filter((b) => matchesRentalView(b, "upcoming")).length },
-    { value: "active", label: "Active", count: rows.filter((b) => matchesRentalView(b, "active")).length },
-    { value: "completed", label: "Completed", count: rows.filter((b) => matchesRentalView(b, "completed")).length },
+    { value: "action", label: "Awaiting Assignment", count: rows.filter((b) => matchesRentalView(b, "action", today)).length, highlight: true },
+    { value: "upcoming", label: "Scheduled", count: rows.filter((b) => matchesRentalView(b, "upcoming", today)).length },
+    { value: "active", label: "Active", count: rows.filter((b) => matchesRentalView(b, "active", today)).length },
+    { value: "completed", label: "Completed", count: rows.filter((b) => matchesRentalView(b, "completed", today)).length },
+    { value: "cancelled", label: "Cancelled", count: rows.filter((b) => matchesRentalView(b, "cancelled", today)).length },
     { value: "all", label: "All", count: rows.length },
   ];
-
-  function handleSort(key: SortKey) {
-    if (sortKey === key) {
-      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-    } else {
-      setSortKey(key);
-      setSortDir(key === "status" ? "asc" : "desc");
-    }
-    setPage(1);
-  }
 
   const filtered = rows.filter((b) => {
     const q = search.trim().toLowerCase();
@@ -108,7 +101,7 @@ export function AllRentals() {
       !q ||
       b.id.toLowerCase().includes(q) ||
       (clientById.get(b.clientId)?.name.toLowerCase().includes(q) ?? false);
-    const matchView = matchesRentalView(b, view);
+    const matchView = matchesRentalView(b, view, today);
     const matchType = !typeFilter || b.rentalType === typeFilter;
     return matchSearch && matchView && matchType;
   });
@@ -122,23 +115,22 @@ export function AllRentals() {
 
   return (
     <div>
-      <FilterTabs options={tabOptions} value={view} onChange={(v) => { setView(v as RentalView); setPage(1); }} />
+      <FilterTabs options={tabOptions} value={view} onChange={(v) => setFilter("view", v as RentalView)} />
 
       <FilterBar
         showSearch
         searchableFields={["ID", "Client"]}
-        showPeriod
         showExport
         exportDisabled={sorted.length === 0}
         onExportCSV={() => exportCSV(BK_HEADERS, sorted.map((b) => bkCSVRow(b, clientById)), `rentals-${view}-${exportDateTag()}.csv`)}
         onExportXLSX={() => exportXLSX(BK_HEADERS, sorted.map((b) => bkXLSXRow(b, clientById)), `rentals-${view}-${exportDateTag()}.xlsx`)}
-        onSearch={(v) => { setSearch(v); setPage(1); }}
+        onSearch={(v) => setFilter("search", v)}
         defaultSearch={search}
         extraFilters={
           <>
             <FilterDropdown
               value={typeFilter}
-              onChange={(value) => { setTypeFilter(value); setPage(1); }}
+              onChange={(value) => setFilter("type", value)}
               placeholder="All Rental Types"
               options={[{ label: "All Rental Types", value: "" }, ...RENTAL_TYPES.map((t) => ({ label: t, value: t }))]}
             />
@@ -170,15 +162,15 @@ export function AllRentals() {
                 <th className="text-left text-xs font-medium text-slate-400 px-4 py-2.5 whitespace-nowrap">Qty</th>
                 <th
                   className="text-left text-xs font-medium text-slate-400 px-4 py-2.5 whitespace-nowrap cursor-pointer select-none hover:text-slate-600"
-                  onClick={() => handleSort("startDate")}
+                  onClick={() => toggleSort("startDate")}
                 >
                   <span className="inline-flex items-center gap-1">Start Date<SortIndicator active={sortKey === "startDate"} direction={sortDir} /></span>
                 </th>
                 <th className="text-left text-xs font-medium text-slate-400 px-4 py-2.5 whitespace-nowrap">End Date</th>
-                <th className="text-left text-xs font-medium text-slate-400 px-4 py-2.5 whitespace-nowrap">Branch Location</th>
+                <th className="text-left text-xs font-medium text-slate-400 px-4 py-2.5 whitespace-nowrap">Delivery Site</th>
                 <th
                   className="sticky right-0 bg-slate-50 border-l border-slate-100 z-10 text-left text-xs font-medium text-slate-400 px-4 py-2.5 whitespace-nowrap cursor-pointer select-none hover:text-slate-600"
-                  onClick={() => handleSort("status")}
+                  onClick={() => toggleSort("status")}
                 >
                   <span className="inline-flex items-center gap-1">Status<SortIndicator active={sortKey === "status"} direction={sortDir} /></span>
                 </th>
@@ -186,7 +178,7 @@ export function AllRentals() {
             </thead>
             <tbody>
               {paginated.map((b) => (
-                <tr key={b.id} className="border-b border-slate-50 hover:bg-slate-50 cursor-pointer" onClick={() => navigate(`/ops/bookings/${b.id}`)}>
+                <tr key={b.id} className="border-b border-slate-50 group hover:bg-slate-50 cursor-pointer" onClick={() => navigate(`/ops/bookings/${b.id}`)}>
                   <td className="px-4 py-3 text-xs text-[var(--portal-accent)] font-medium whitespace-nowrap">{b.id}</td>
                   <td className="px-4 py-3 text-xs text-slate-700 truncate">{clientById.get(b.clientId)?.name ?? b.clientId}</td>
                   <td className="px-4 py-3 text-xs text-slate-600 whitespace-nowrap">{b.rentalType}</td>
@@ -195,7 +187,7 @@ export function AllRentals() {
                   <td className="px-4 py-3 text-xs text-slate-600 whitespace-nowrap">{formatDate(b.startDate)}</td>
                   <td className="px-4 py-3 text-xs text-slate-600 whitespace-nowrap">{formatDate(b.endDate)}</td>
                   <td className="px-4 py-3 text-xs text-slate-600 truncate">{b.pickupLocation}</td>
-                  <td className="sticky right-0 bg-white border-l border-slate-100 px-4 py-3 whitespace-nowrap">
+                  <td className="sticky right-0 bg-white group-hover:bg-slate-50 border-l border-slate-100 px-4 py-3 whitespace-nowrap">
                     <StatusBadge status={fleetCoBookingStatusLabel(b)} />
                   </td>
                 </tr>

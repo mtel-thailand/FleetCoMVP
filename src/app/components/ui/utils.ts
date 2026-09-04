@@ -1,20 +1,13 @@
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
+import { formatUiDate } from "@/app/i18n";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-
 export function formatDate(value: string | null | undefined): string {
-  if (!value) return "";
-  const [datePart, timePart] = value.trim().split(" ");
-  const parts = datePart.split("-");
-  if (parts.length !== 3) return value;
-  const [year, month, day] = parts;
-  const label = `${parseInt(day)} ${MONTHS[parseInt(month) - 1]} ${year}`;
-  return timePart ? `${label} · ${timePart}` : label;
+  return formatUiDate(value);
 }
 
 export function formatDateTime(
@@ -22,7 +15,21 @@ export function formatDateTime(
   time: string | null | undefined
 ): string {
   if (!date || !time) return "—";
-  return `${formatDate(date)} · ${time}`;
+  return formatUiDate(`${date} ${time}`);
+}
+
+// "Today" as a plain YYYY-MM-DD key, comparable directly against the
+// startDate/endDate strings bookings already store — used wherever a
+// booking's own scheduled window needs checking against the real world
+// (has it started yet, has it run past its end) rather than trusting
+// status alone. Shared rather than reimplemented per caller so "what counts
+// as today" can't quietly drift between the vehicle page and the booking
+// page that both need it.
+export function localDateKey(date = new Date()): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 export function sortByStatus<T>(
